@@ -1492,6 +1492,81 @@
     return { auditResult: resultVal, label: hitLabel, reason: reasonText, hitKeywords: hitKeywords };
   }
 
+  // ── LLM API Call ─────────────────────────────────────────────────
+  async function callLLM(mcId, systemPrompt, userPrompt) {
+    var mc = getModelConfigById(mcId);
+    if (!mc) throw new Error('模型配置不存在');
+
+    var apiKey = apiKeysInMemory[mcId];
+    if (!apiKey) throw new Error('API Key 未配置，请先在模型接入配置中保存 API Key');
+
+    var body = {
+      model: mc.model_name || 'deepseek-chat',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt }
+      ],
+      temperature: mc.temperature != null ? mc.temperature : 0.2,
+      max_tokens: mc.max_tokens || 1200,
+      stream: false
+    };
+
+    var timeoutMs = (mc.timeout_seconds || 30) * 1000;
+    var controller = new AbortController();
+    var timer = setTimeout(function () { controller.abort(); }, timeoutMs);
+
+    try {
+      var response = await fetch(mc.base_url.replace(/\/+$/, '') + '/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + apiKey
+        },
+        body: JSON.stringify(body),
+        signal: controller.signal
+      });
+
+      if (!response.ok) {
+        var errText = '';
+        try { errText = await response.text(); } catch (e) { errText = '无法读取错误信息'; }
+        throw new Error('API 请求失败 (' + response.status + '): ' + errText);
+      }
+
+      var data = await response.json();
+      return data;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  // ── Build prompt by replacing variables ──────────────────────────
+  function buildPromptFromTemplate(pt, varValues) {
+    var systemPrompt = pt.system_prompt || '';
+    var userPrompt = pt.user_prompt || '';
+    var keys = Object.keys(varValues);
+    for (var i = 0; i < keys.length; i++) {
+      var re = new RegExp('\\{\\{' + keys[i] + '\\}\\}', 'g');
+      systemPrompt = systemPrompt.replace(re, varValues[keys[i]]);
+      userPrompt = userPrompt.replace(re, varValues[keys[i]]);
+    }
+    return { systemPrompt: systemPrompt, userPrompt: userPrompt };
+  }
+
+  // ── Parse LLM response JSON ──────────────────────────────────────
+  function parseLLMResponse(llmData) {
+    var content = '';
+    if (llmData && llmData.choices && llmData.choices.length > 0) {
+      content = llmData.choices[0].message.content || '';
+    }
+    var parsed = null;
+    try {
+      if (content) parsed = JSON.parse(content.replace(/```json\s*|```/g, '').trim());
+    } catch (e) {
+      // Return raw content if not valid JSON
+    }
+    return { raw: content, parsed: parsed };
+  }
+
   // ── Single Test ─────────────────────────────────────────────────
   function renderSingleTestSelects() {
     var promptSelect = document.getElementById('stPromptTemplate');
@@ -1544,15 +1619,16 @@
     }).join('');
   }
 
-  function handleSingleTest() {
+  async function handleSingleTest() {
+    var mcId = document.getElementById('stModelConfig').value;
     var promptId = document.getElementById('stPromptTemplate').value;
 
+    if (!mcId) { alert('请选择模型配置'); return; }
     if (!promptId) { alert('请选择 Prompt 模板'); return; }
 
     var pt = getPromptById(promptId);
     if (!pt) { alert('模板不存在'); return; }
 
-    // Collect values from dynamic var fields
     var varValues = {};
     var allEmpty = true;
     var container = document.getElementById('stVarFields');
@@ -1569,44 +1645,45 @@
     var btn = document.getElementById('btnSingleTest');
     btn.disabled = true;
     btn.textContent = '检测中...';
-    document.getElementById('stTestStatusText').textContent = '正在进行敏感词匹配...';
+    document.getElementById('stTestStatusText').textContent = '正在调用大模型进行审核...';
 
-    // Direct keyword matching — no LLM, no delay
-    var combinedText = Object.keys(varValues).map(function (k) { return varValues[k]; }).join('\n');
-    var kwResult = matchSensitiveWords(combinedText);
-    displaySingleTestResult(kwResult, pt.parse_fields);
+    try {
+      var prompts = buildPromptFromTemplate(pt, varValues);
+      var llmData = await callLLM(mcId, prompts.systemPrompt, prompts.userPrompt);
+      var parsed = parseLLMResponse(llmData);
+      displaySingleTestResult(parsed, pt.parse_fields);
+      document.getElementById('stTestStatusText').textContent = '检测完成';
+    } catch (e) {
+      document.getElementById('stTestErrorSection').style.display = 'block';
+      document.getElementById('stTestError').textContent = e.message;
+      document.getElementById('stTestResult').style.display = 'block';
+      document.getElementById('stTestRaw').textContent = '';
+      document.getElementById('stTestParsed').innerHTML = '';
+      document.getElementById('stTestStatusText').textContent = '检测失败';
+    }
     btn.disabled = false;
     btn.textContent = '开始检测';
-    document.getElementById('stTestStatusText').textContent = '检测完成';
   }
 
-  function displaySingleTestResult(kwResult, parseFields) {
+  function displaySingleTestResult(parsed, parseFields) {
     var container = document.getElementById('stTestResult');
     container.style.display = 'block';
     document.getElementById('stTestErrorSection').style.display = 'none';
 
-    // Raw result: summary of matched keywords
-    var rawText = kwResult.hitKeywords.length > 0
-      ? '命中敏感词：' + kwResult.hitKeywords.join('、')
-      : '未命中任何敏感词';
-    document.getElementById('stTestRaw').textContent = rawText;
+    document.getElementById('stTestRaw').textContent = parsed.raw || '（无返回内容）';
 
     var pf = (parseFields && Array.isArray(parseFields) && parseFields.length > 0) ? parseFields : [];
     if (pf.length === 0) {
       document.getElementById('stTestParsed').innerHTML = '<p style="color:#909399;">（未配置解析字段，仅展示原始结果）</p>';
-    } else {
+    } else if (parsed.parsed) {
       var html = '';
-      var mappedValues = [kwResult.auditResult, kwResult.label, kwResult.reason];
       for (var i = 0; i < pf.length; i++) {
-        var val = i < mappedValues.length ? mappedValues[i] : '';
-        if (i === 0 && (val === 'pass' || val === 'violate')) {
-          var badge = val === 'violate' ? '<span class="badge badge-violate">违规</span>' : '<span class="badge badge-pass">通过</span>';
-          html += '<div class="pr-row"><span class="pr-label">' + escHtml(pf[i]) + '</span><span class="pr-value">' + badge + '</span></div>';
-        } else {
-          html += '<div class="pr-row"><span class="pr-label">' + escHtml(pf[i]) + '</span><span class="pr-value">' + escHtml(val) + '</span></div>';
-        }
+        var val = parsed.parsed[pf[i]];
+        html += '<div class="pr-row"><span class="pr-label">' + escHtml(pf[i]) + '</span><span class="pr-value">' + escHtml(val != null ? String(val) : '') + '</span></div>';
       }
       document.getElementById('stTestParsed').innerHTML = html;
+    } else {
+      document.getElementById('stTestParsed').innerHTML = '<p style="color:#e6a23c;">LLM 返回结果无法解析为 JSON，请查看原始返回</p>';
     }
   }
 
@@ -1779,15 +1856,19 @@
   function handleCreateBatchTask(e) {
     e.preventDefault();
     var taskName = (document.getElementById('btTaskName').value || '').trim();
+    var mcId = document.getElementById('btModelConfig').value;
     var promptId = document.getElementById('btPromptTemplate').value;
 
     var errors = [];
     if (!taskName) errors.push('任务名称不能为空');
+    if (!mcId) errors.push('请选择模型配置');
     if (!promptId) errors.push('请选择 Prompt 模板');
     if (!pendingBatchFileData || pendingBatchFileData.valid_count === 0) errors.push('请上传有效的 Excel 文件');
 
     if (errors.length > 0) { alert('创建失败：\n' + errors.join('\n')); return; }
 
+    var mc = getModelConfigById(mcId);
+    if (!mc) { alert('模型配置不存在'); return; }
     var pt = getPromptById(promptId);
     if (!pt) { alert('模板不存在'); return; }
 
@@ -1814,8 +1895,8 @@
       task_id: generateId('BT'),
       task_name: taskName,
       audit_type: 'text',
-      model_config_id: '',
-      model_config_name: '敏感词匹配',
+      model_config_id: mcId,
+      model_config_name: mc.config_name,
       prompt_template_id: promptId,
       prompt_template_name: pt.prompt_name,
       file_name: pendingBatchFileData.file_name,
@@ -1866,48 +1947,113 @@
     task.task_status = 'running';
     if (!task.started_at) task.started_at = now();
     saveBatchTasks();
-
-    // Synchronous keyword matching — no LLM, instant processing
-    var tmplVars = task.template_vars || ['title', 'content'];
-    var nowStr = now();
-    task.items.forEach(function (item) {
-      if (item.detect_status === 'cancelled') return;
-
-      // Build combined text from template var fields
-      var parts = [];
-      tmplVars.forEach(function (v) { if (item[v]) parts.push(item[v]); });
-      var combinedText = parts.join('\n');
-
-      // Run sensitive word matching
-      var kwResult = matchSensitiveWords(combinedText);
-
-      item.detect_status = 'success';
-      item.audit_result = kwResult.auditResult;
-      item.label = kwResult.label;
-      item.reason = kwResult.reason;
-      item.raw_response = kwResult.hitKeywords.length > 0
-        ? '命中敏感词：' + kwResult.hitKeywords.join('、')
-        : '未命中任何敏感词';
-      item.cost_time = 0;
-      item.completed_at = nowStr;
-      task.success_count++;
-      if (kwResult.auditResult === 'violate') task.violate_count++;
-      else task.pass_count++;
-    });
-
-    task.pending_count = 0;
-    task.progress = 100;
-    task.current_index = task.items.length;
-    task.task_status = 'completed';
-    task.completed_at = nowStr;
-    saveBatchTasks();
-
     renderBatchProgress();
     renderBatchTaskList();
+
+    processNextBatchItem(taskId);
+  }
+
+  async function processNextBatchItem(taskId) {
+    var task = getBatchTaskById(taskId);
+    if (!task || task.task_status !== 'running') return;
+
+    // Find next pending item
+    var idx = task.current_index || 0;
+    var item = null;
+    while (idx < task.items.length) {
+      if (task.items[idx].detect_status === 'pending') {
+        item = task.items[idx];
+        break;
+      }
+      idx++;
+    }
+
+    if (!item) {
+      // All done
+      task.progress = 100;
+      task.current_index = task.items.length;
+      task.pending_count = 0;
+      task.task_status = task.failed_count > 0 && task.success_count > 0 ? 'partial_failed'
+        : task.failed_count === task.total_count ? 'failed' : 'completed';
+      task.completed_at = now();
+      saveBatchTasks();
+      renderBatchProgress();
+      renderBatchTaskList();
+      return;
+    }
+
+    task.current_index = idx;
+    task.processing_count = 1;
+    task.pending_count--;
+    item.detect_status = 'processing';
+    saveBatchTasks();
+    renderBatchProgress();
+
+    var startTime = Date.now();
+
+    try {
+      var pt = getPromptById(task.prompt_template_id);
+      if (!pt) throw new Error('Prompt 模板不存在');
+
+      var varValues = {};
+      (task.template_vars || []).forEach(function (v) { varValues[v] = item[v] || ''; });
+      var prompts = buildPromptFromTemplate(pt, varValues);
+
+      var llmData = await callLLM(task.model_config_id, prompts.systemPrompt, prompts.userPrompt);
+      var parsed = parseLLMResponse(llmData);
+
+      // Reload task to avoid overwriting changes made during async call
+      task = getBatchTaskById(taskId);
+      if (!task) return;
+      var reloadedItem = task.items[idx];
+      if (!reloadedItem || reloadedItem.detect_status === 'cancelled') {
+        // Item was cancelled during processing
+        processNextBatchItem(taskId);
+        return;
+      }
+
+      reloadedItem.raw_response = parsed.raw;
+      if (parsed.parsed) {
+        var pf = (task.parse_fields && task.parse_fields.length > 0) ? task.parse_fields : ['result', 'label', 'reason'];
+        reloadedItem.audit_result = parsed.parsed[pf[0]] || '';
+        reloadedItem.label = parsed.parsed[pf[1]] || '';
+        reloadedItem.reason = parsed.parsed[pf[2]] || '';
+      }
+      reloadedItem.detect_status = 'success';
+      reloadedItem.cost_time = Date.now() - startTime;
+      reloadedItem.completed_at = now();
+      task.success_count++;
+
+      if (reloadedItem.audit_result === 'violate' || reloadedItem.audit_result === 'reject') task.violate_count++;
+      else if (reloadedItem.audit_result === 'suspect') task.suspect_count++;
+      else task.pass_count++;
+
+    } catch (e) {
+      task = getBatchTaskById(taskId);
+      if (!task) return;
+      var errItem = task.items[idx];
+      if (!errItem || errItem.detect_status === 'cancelled') {
+        processNextBatchItem(taskId);
+        return;
+      }
+      errItem.detect_status = 'failed';
+      errItem.fail_reason = e.message;
+      errItem.cost_time = Date.now() - startTime;
+      errItem.completed_at = now();
+      task.failed_count++;
+    }
+
+    task.processing_count = 0;
+    saveBatchTasks();
+    renderBatchProgress();
+    renderBatchTaskList();
+
+    // Process next item
+    processNextBatchItem(taskId);
   }
 
   function processBatchItem(taskId) {
-    // No-op — batch processing is now synchronous in startBatchProcessing
+    // Async processing is now handled by processNextBatchItem
   }
 
   function pauseBatchTask(taskId) {
@@ -1944,7 +2090,7 @@
     if (activeBatchTimer) { clearInterval(activeBatchTimer); activeBatchTimer = null; }
     task.task_status = 'cancelled';
     task.completed_at = now();
-    // Mark remaining items as cancelled
+    // Mark remaining pending items as cancelled (processing item will finish naturally)
     for (var i = task.current_index; i < task.items.length; i++) {
       if (task.items[i].detect_status === 'pending') {
         task.items[i].detect_status = 'cancelled';
