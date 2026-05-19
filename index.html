@@ -1,0 +1,773 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>内容检测平台</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="header">
+    <div class="header-inner">
+      <h1 class="logo">内容检测平台</h1>
+      <span class="header-badge">MVP v1.0</span>
+    </div>
+  </header>
+
+  <div class="layout">
+    <!-- Sidebar Menu -->
+    <aside class="sidebar">
+      <nav class="sidebar-menu">
+        <a class="menu-item active" data-menu="detect">
+          <span class="menu-icon">&#9744;</span>
+          <span>内容检测</span>
+        </a>
+        <a class="menu-item" data-menu="rules">
+          <span class="menu-icon">&#9881;</span>
+          <span>关键词管理</span>
+        </a>
+        <a class="menu-item" data-menu="history">
+          <span class="menu-icon">&#9776;</span>
+          <span>检测记录</span>
+        </a>
+        <a class="menu-item menu-parent" data-menu="model">
+          <span class="menu-icon">&#9883;</span>
+          <span>大模型审核配置</span>
+          <span class="menu-arrow">&#9662;</span>
+        </a>
+        <div class="menu-sub-items">
+          <a class="menu-sub-item" data-menu="model-config">
+            <span class="sub-item-dot"></span>模型接入配置
+          </a>
+          <a class="menu-sub-item" data-menu="prompt-config">
+            <span class="sub-item-dot"></span>提示词配置
+          </a>
+          <a class="menu-sub-item" data-menu="single-test">
+            <span class="sub-item-dot"></span>单条测试
+          </a>
+          <a class="menu-sub-item" data-menu="batch-test">
+            <span class="sub-item-dot"></span>批量检测
+          </a>
+        </div>
+      </nav>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main">
+      <!-- Page: Content Detection -->
+      <section class="tab-content active" id="tab-detect">
+      <div class="card">
+        <h2 class="card-title">内容检测</h2>
+        <form id="detectForm" class="detect-form">
+          <div class="form-group">
+            <label class="form-label">内容类型</label>
+            <div class="content-type-switcher" id="contentTypeSwitcher">
+              <button type="button" class="ct-btn active" data-ct="text">文本</button>
+              <button type="button" class="ct-btn" data-ct="image">图片</button>
+              <button type="button" class="ct-btn" data-ct="video">视频</button>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="title">标题</label>
+            <input type="text" id="title" class="form-input" placeholder="请输入内容标题（选填）" maxlength="200">
+          </div>
+
+          <!-- Text input -->
+          <div class="form-group" id="groupText" style="display:none">
+            <label class="form-label" for="textContent">正文内容 <span class="required">*</span></label>
+            <textarea id="textContent" class="form-textarea" placeholder="请输入正文内容" rows="8" maxlength="10000"></textarea>
+            <span class="form-hint" id="textCharCount">0 / 10000</span>
+          </div>
+
+          <!-- Image upload -->
+          <div class="form-group" id="groupImage" style="display:none">
+            <label class="form-label" for="imageFile">上传图片 <span class="required">*</span></label>
+            <div class="file-upload-wrap">
+              <input type="file" id="imageFile" class="file-input" accept=".jpg,.jpeg,.png,.webp">
+              <label for="imageFile" class="file-label">选择图片文件</label>
+              <span class="file-hint">支持 JPG / JPEG / PNG / WebP，最大 10MB</span>
+            </div>
+            <div class="preview-wrap" id="imagePreview" style="display:none">
+              <img id="imagePreviewImg" alt="图片预览">
+              <button type="button" class="btn-preview-remove" id="removeImage">&times;</button>
+            </div>
+            <span class="form-error" id="imageError"></span>
+          </div>
+
+          <!-- Video upload -->
+          <div class="form-group" id="groupVideo" style="display:none">
+            <label class="form-label" for="videoFile">上传视频 <span class="required">*</span></label>
+            <div class="file-upload-wrap">
+              <input type="file" id="videoFile" class="file-input" accept=".mp4,.mov,.avi,.mkv">
+              <label for="videoFile" class="file-label">选择视频文件</label>
+              <span class="file-hint">支持 MP4 / MOV / AVI / MKV，最大 100MB</span>
+            </div>
+            <div class="preview-wrap" id="videoPreview" style="display:none">
+              <video id="videoPreviewEl" controls></video>
+              <button type="button" class="btn-preview-remove" id="removeVideo">&times;</button>
+            </div>
+            <span class="form-error" id="videoError"></span>
+          </div>
+
+          <div class="form-actions">
+            <button type="submit" class="btn btn-primary">开始检测</button>
+            <button type="button" class="btn btn-secondary" id="btnReset">清空内容</button>
+          </div>
+        </form>
+      </div>
+
+      <!-- Detection Result -->
+      <div class="card" id="resultCard" style="display:none">
+        <h2 class="card-title">检测结果</h2>
+        <div id="resultContent"></div>
+      </div>
+    </section>
+
+    <!-- Tab: Keyword Rule Management -->
+    <section class="tab-content" id="tab-rules">
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">关键词管理</h2>
+          <div class="card-actions">
+            <button class="btn btn-primary" id="btnAddRule">新增关键词</button>
+            <button class="btn btn-secondary" id="btnBatchImport" title="预留功能">批量导入</button>
+            <button class="btn btn-secondary" id="btnBatchExport" title="预留功能">批量导出</button>
+          </div>
+        </div>
+        <div class="filter-bar">
+          <input type="text" id="ruleSearch" class="form-input filter-input" placeholder="搜索关键词...">
+          <select id="filterLabel" class="form-select filter-select">
+            <option value="">全部标签</option>
+          </select>
+          <select id="filterRiskLevel" class="form-select filter-select">
+            <option value="">全部风险等级</option>
+            <option value="low">低危</option>
+            <option value="medium">中危</option>
+            <option value="high">高危</option>
+          </select>
+        </div>
+        <div class="table-wrap">
+          <table class="table" id="ruleTable">
+            <thead>
+              <tr>
+                <th>关键词</th>
+                <th>标签</th>
+                <th>风险等级</th>
+                <th>审核结果</th>
+                <th>状态</th>
+                <th>备注</th>
+                <th>更新时间</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="ruleTableBody">
+              <tr><td colspan="8" class="table-empty">暂无规则</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="table-footer">
+          <span id="ruleCount">共 0 条规则</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Tab: Audit History -->
+    <section class="tab-content" id="tab-history">
+      <section class="dashboard" id="dashboard">
+        <div class="stat-card">
+          <div class="stat-value" id="statTotalRules">0</div>
+          <div class="stat-label">启用规则</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" id="statTodayDetections">0</div>
+          <div class="stat-label">今日检测</div>
+        </div>
+        <div class="stat-card stat-card--violate">
+          <div class="stat-value" id="statViolations">0</div>
+          <div class="stat-label">违规次数</div>
+        </div>
+        <div class="stat-card stat-card--pass">
+          <div class="stat-value" id="statPassRate">-</div>
+          <div class="stat-label">通过率</div>
+        </div>
+      </section>
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">检测记录</h2>
+          <button class="btn btn-danger" id="btnClearHistory">清空记录</button>
+        </div>
+        <div class="table-wrap">
+          <table class="table" id="historyTable">
+            <thead>
+              <tr>
+                <th>检测ID</th>
+                <th>内容类型</th>
+                <th>标题</th>
+                <th>审核结果</th>
+                <th>风险等级</th>
+                <th>标签</th>
+                <th>检测方式</th>
+                <th>检测时间</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="historyTableBody">
+              <tr><td colspan="9" class="table-empty">暂无检测记录</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="table-footer">
+          <span id="historyCount">共 0 条记录</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Tab: 模型接入配置 -->
+    <section class="tab-content" id="tab-model-config">
+      <div class="card">
+        <div class="list-page-header">
+          <div>
+            <h2 class="card-title">模型接入配置</h2>
+            <p class="card-desc">管理大模型 API 接入配置，支持多套配置、连接测试、启停管理。</p>
+          </div>
+          <button class="btn btn-primary" id="btnNewModelConfig">新建配置</button>
+        </div>
+        <div class="filter-bar">
+          <select id="filterModelStatus" class="form-select filter-select">
+            <option value="">全部状态</option>
+            <option value="enabled">已启用</option>
+            <option value="disabled">已停用</option>
+          </select>
+        </div>
+        <div class="table-wrap">
+          <table class="table" id="modelConfigTable">
+            <thead>
+              <tr>
+                <th>配置名称</th>
+                <th>模型供应商</th>
+                <th>大模型分类</th>
+                <th>模型名称</th>
+                <th>配置状态</th>
+                <th>更新时间</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="modelConfigTableBody">
+              <tr><td colspan="7" class="table-empty">暂无模型配置，请点击"新建配置"</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- Tab: 提示词配置 -->
+    <section class="tab-content" id="tab-prompt-config">
+      <div class="card">
+        <div class="list-page-header">
+          <div>
+            <h2 class="card-title">提示词配置</h2>
+            <p class="card-desc">管理审核 Prompt 模板，支持多套模板、独立启用/停用。</p>
+          </div>
+          <button class="btn btn-primary" id="btnNewPrompt">新建 Prompt</button>
+        </div>
+        <div class="filter-bar">
+          <select id="filterPromptStatus" class="form-select filter-select">
+            <option value="">全部状态</option>
+            <option value="enabled">已启用</option>
+            <option value="disabled">已停用</option>
+          </select>
+        </div>
+        <div class="table-wrap">
+          <table class="table" id="promptTable">
+            <thead>
+              <tr>
+                <th>Prompt 名称</th>
+                <th>Prompt 类型</th>
+                <th>状态</th>
+                <th>更新时间</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="promptTableBody">
+              <tr><td colspan="5" class="table-empty">暂无 Prompt 模板，请点击"新建 Prompt"</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- Tab: 单条测试 -->
+    <section class="tab-content" id="tab-single-test">
+      <div class="card">
+        <h2 class="card-title">单条测试</h2>
+        <p class="card-desc">选择模型配置和 Prompt 模板，输入测试内容，验证审核效果。</p>
+
+        <!-- 内容类型切换 -->
+        <div class="ct-tabs">
+          <button type="button" class="ct-tab active" data-ct="text">文本审核</button>
+          <button type="button" class="ct-tab" data-ct="image">图片审核</button>
+          <button type="button" class="ct-tab" data-ct="video">视频审核</button>
+        </div>
+
+        <!-- 文本测试 -->
+        <div class="ct-panel active" id="ct-panel-text">
+          <div class="test-grid">
+            <div class="form-group">
+              <label class="form-label" for="stModelCategory">大模型分类</label>
+              <select id="stModelCategory" class="form-select">
+                <option value="">全部分类</option>
+                <option value="multimodal">多模态</option>
+                <option value="unimodal">单模态</option>
+              </select>
+              <label class="form-label" for="stModelConfig" style="margin-top:8px;">模型配置 <span class="required">*</span></label>
+              <select id="stModelConfig" class="form-select">
+                <option value="">请选择模型配置</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="stPromptTemplate">Prompt 模板 <span class="required">*</span></label>
+              <select id="stPromptTemplate" class="form-select">
+                <option value="">请选择 Prompt 模板</option>
+              </select>
+            </div>
+          </div>
+          <div id="stVarFields">
+            <p class="form-hint" style="padding:16px 0;">请先选择 Prompt 模板，将根据模板中的变量展示对应输入字段</p>
+          </div>
+          <div class="form-actions">
+            <button type="button" class="btn btn-primary" id="btnSingleTest">开始检测</button>
+            <span class="form-hint-inline" id="stTestStatusText"></span>
+          </div>
+        </div>
+
+        <!-- 图片测试 -->
+        <div class="ct-panel" id="ct-panel-image">
+          <div class="test-grid">
+            <div class="form-group">
+              <label class="form-label" for="stImgModelConfig">模型配置</label>
+              <select id="stImgModelConfig" class="form-select" disabled>
+                <option value="">暂无可用的视觉模型配置</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="stImgPromptTemplate">Prompt 模板</label>
+              <select id="stImgPromptTemplate" class="form-select" disabled>
+                <option value="">暂无可用的图片审核 Prompt</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="stImgTitle">标题</label>
+            <input type="text" id="stImgTitle" class="form-input" placeholder="请输入图片标题（选填）" maxlength="500" disabled>
+          </div>
+          <div class="form-group">
+            <label class="form-label">图片信息</label>
+            <input type="text" class="form-input" placeholder="请输入图片 URL 地址" disabled>
+          </div>
+          <div class="form-actions">
+            <button type="button" class="btn btn-primary" disabled>开始检测</button>
+            <span class="form-hint-inline" style="color:#909399;">图片审核功能即将上线，敬请期待</span>
+          </div>
+        </div>
+
+        <!-- 视频测试 -->
+        <div class="ct-panel" id="ct-panel-video">
+          <div class="test-grid">
+            <div class="form-group">
+              <label class="form-label" for="stVideoModelConfig">模型配置</label>
+              <select id="stVideoModelConfig" class="form-select" disabled>
+                <option value="">暂无可用的视觉模型配置</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="stVideoPromptTemplate">Prompt 模板</label>
+              <select id="stVideoPromptTemplate" class="form-select" disabled>
+                <option value="">暂无可用的视频审核 Prompt</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="stVideoTitle">标题</label>
+            <input type="text" id="stVideoTitle" class="form-input" placeholder="请输入视频标题（选填）" maxlength="500" disabled>
+          </div>
+          <div class="form-group">
+            <label class="form-label">视频信息</label>
+            <input type="text" class="form-input" placeholder="请输入视频 URL 地址" disabled>
+          </div>
+          <div class="form-actions">
+            <button type="button" class="btn btn-primary" disabled>开始检测</button>
+            <span class="form-hint-inline" style="color:#909399;">视频审核功能即将上线，敬请期待</span>
+          </div>
+        </div>
+
+        <!-- 检测结果 - 共享 -->
+        <div id="stTestResult" style="display:none;">
+          <div class="test-grid" style="margin-top:16px;">
+            <div>
+              <h4 style="margin-bottom:8px;">原始返回</h4>
+              <pre class="test-result-pre" id="stTestRaw"></pre>
+            </div>
+            <div>
+              <h4 style="margin-bottom:8px;">解析结果</h4>
+              <div class="parsed-result" id="stTestParsed"></div>
+            </div>
+          </div>
+          <div id="stTestErrorSection" style="display:none;margin-top:12px;">
+            <h4 style="margin-bottom:6px;">失败原因</h4>
+            <p class="test-error-text" id="stTestError"></p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 模型接入配置 - 编辑页面 -->
+    <section class="tab-content" id="tab-model-config-edit">
+      <div class="card">
+        <div class="card-header">
+          <div style="display:flex;align-items:center;gap:12px;">
+            <button type="button" class="btn btn-secondary" id="btnMcmBack">← 返回列表</button>
+            <h2 class="card-title" id="modelConfigEditTitle">新建模型配置</h2>
+          </div>
+        </div>
+        <form id="modelConfigForm">
+          <input type="hidden" id="mcmId">
+          <div class="form-group">
+            <label class="form-label" for="mcmConfigName">配置名称 <span class="required">*</span></label>
+            <input type="text" id="mcmConfigName" class="form-input" placeholder="例如：DeepSeek 文本审核配置" maxlength="50">
+            <span class="form-hint">2-50 个字符</span>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="mcmProvider">模型供应商 <span class="required">*</span></label>
+            <select id="mcmProvider" class="form-select" disabled>
+              <option value="deepseek">DeepSeek</option>
+            </select>
+            <span class="form-hint">当前仅支持 DeepSeek</span>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="mcmCategory">大模型分类 <span class="required">*</span></label>
+            <select id="mcmCategory" class="form-select">
+              <option value="multimodal">多模态</option>
+              <option value="unimodal">单模态</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="mcmBaseUrl">API Base URL <span class="required">*</span></label>
+            <input type="url" id="mcmBaseUrl" class="form-input" placeholder="https://api.deepseek.com" value="https://api.deepseek.com">
+          </div>
+          <div class="form-group">
+            <label class="form-label">API Key <span class="required">*</span></label>
+            <div class="apikey-wrap">
+              <input type="password" id="mcmApiKey" class="form-input apikey-input" placeholder="请输入 DeepSeek API Key" autocomplete="off">
+              <button type="button" class="btn btn-sm btn-secondary" id="btnMcmToggleApiKey">显示</button>
+              <button type="button" class="btn btn-sm btn-secondary" id="btnMcmSaveApiKey">保存</button>
+              <button type="button" class="btn btn-sm btn-danger" id="btnMcmDeleteApiKey">删除</button>
+            </div>
+            <span class="form-hint" id="mcmApiKeyHint">API Key 保存后仅展示脱敏信息</span>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="mcmModelName">模型名称 <span class="required">*</span></label>
+            <input type="text" id="mcmModelName" class="form-input" list="mcmModelNameList" placeholder="deepseek-chat" value="deepseek-chat">
+            <datalist id="mcmModelNameList">
+              <option value="deepseek-chat">
+              <option value="deepseek-reasoner">
+            </datalist>
+            <span class="form-hint">可从下拉列表选择或手动输入</span>
+          </div>
+          <div class="form-row form-row-3">
+            <div class="form-group">
+              <label class="form-label" for="mcmTemperature">Temperature <span class="required">*</span></label>
+              <input type="number" id="mcmTemperature" class="form-input" min="0" max="1" step="0.01" value="0.2">
+              <span class="form-hint">范围 0-1</span>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="mcmMaxTokens">最大输出长度 <span class="required">*</span></label>
+              <input type="number" id="mcmMaxTokens" class="form-input" min="256" max="4096" step="1" value="1200">
+              <span class="form-hint">范围 256-4096</span>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="mcmTimeout">超时时间（秒） <span class="required">*</span></label>
+              <input type="number" id="mcmTimeout" class="form-input" min="5" max="120" step="1" value="30">
+              <span class="form-hint">范围 5-120</span>
+            </div>
+          </div>
+          <div class="form-actions">
+            <button type="submit" class="btn btn-primary" id="btnMcmSubmit">保存</button>
+          </div>
+        </form>
+      </div>
+    </section>
+
+    <!-- 提示词配置 - 编辑页面 -->
+    <section class="tab-content" id="tab-prompt-config-edit">
+      <div class="card">
+        <div class="card-header">
+          <div style="display:flex;align-items:center;gap:12px;">
+            <button type="button" class="btn btn-secondary" id="btnPmBack">← 返回列表</button>
+            <h2 class="card-title" id="promptEditTitle">新建 Prompt</h2>
+          </div>
+        </div>
+        <form id="promptForm">
+          <input type="hidden" id="pmId">
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label" for="pmPromptName">Prompt 名称 <span class="required">*</span></label>
+              <input type="text" id="pmPromptName" class="form-input" placeholder="例如：通用文本审核 Prompt" maxlength="50">
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="pmRemark">建议</label>
+              <input type="text" id="pmRemark" class="form-input" placeholder="使用建议（选填）" maxlength="200">
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="pmPromptType">Prompt 类型 <span class="required">*</span></label>
+            <select id="pmPromptType" class="form-select" disabled>
+              <option value="text_audit">文本审核</option>
+            </select>
+            <span class="form-hint">当前仅支持文本审核</span>
+          </div>
+          <div class="form-group">
+            <label class="form-label">解析字段</label>
+            <p class="form-hint" style="margin-bottom:8px;">定义 Prompt 返回 JSON 的字段名，用于单条测试和批量检测的结果展示。双击字段名可编辑，可为空，为空时仅展示原始结果。</p>
+            <div class="pf-tag-editor" id="pfTagEditor"></div>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="pmSystemPrompt">System Prompt <span class="required">*</span></label>
+            <textarea id="pmSystemPrompt" class="form-textarea prompt-textarea" rows="12" placeholder="请输入 System Prompt"></textarea>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="pmUserPrompt">User Prompt <span class="required">*</span></label>
+            <textarea id="pmUserPrompt" class="form-textarea prompt-textarea" rows="6" placeholder="请输入 User Prompt 模板"></textarea>
+            <div class="var-tags" id="promptVarTags" style="margin-top:6px;">
+              <span class="form-hint">可用变量：</span>
+            </div>
+          </div>
+          <div class="form-actions">
+            <button type="submit" class="btn btn-primary" id="btnPmSubmit">保存</button>
+          </div>
+        </form>
+      </div>
+    </section>
+
+    <!-- 批量检测 - 列表页 -->
+    <section class="tab-content" id="tab-batch-test">
+
+      <!-- 子标签切换 -->
+      <div class="ct-tabs" id="btSubTabs">
+        <button type="button" class="ct-tab active" data-bt-tab="create">创建任务</button>
+        <button type="button" class="ct-tab" data-bt-tab="list">任务列表</button>
+      </div>
+
+      <!-- 当前任务进度（始终可见） -->
+      <div class="card" id="batchProgressCard" style="display:none;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+          <h2 class="card-title" style="margin-bottom:0;">当前任务进度</h2>
+          <div id="btProgressActions"></div>
+        </div>
+        <div id="btProgressContent"></div>
+      </div>
+
+      <!-- 创建任务面板 -->
+      <div class="bt-panel active" id="bt-panel-create">
+        <div class="card">
+          <h2 class="card-title">创建批量任务</h2>
+          <p class="card-desc">上传 Excel 文本内容文件，选择模型配置和 Prompt 模板后创建批量检测任务。</p>
+          <form id="batchTaskForm">
+            <div class="form-group">
+              <label class="form-label" for="btTaskName">任务名称 <span class="required">*</span></label>
+              <input type="text" id="btTaskName" class="form-input" placeholder="例如：12月文本批量审核" maxlength="50">
+            </div>
+            <div class="form-group">
+              <label class="form-label">审核类型</label>
+              <div class="ct-tabs" id="btAuditTypeTabs">
+                <button type="button" class="ct-tab active" data-bt-type="text">文本审核</button>
+                <button type="button" class="ct-tab" data-bt-type="image" disabled>图片审核<span style="font-size:11px;color:var(--text-muted);margin-left:4px;">暂未开放</span></button>
+                <button type="button" class="ct-tab" data-bt-type="video" disabled>视频审核<span style="font-size:11px;color:var(--text-muted);margin-left:4px;">暂未开放</span></button>
+              </div>
+            </div>
+            <div class="test-grid">
+              <div class="form-group">
+                <label class="form-label" for="btModelCategory">大模型分类</label>
+                <select id="btModelCategory" class="form-select">
+                  <option value="">全部分类</option>
+                  <option value="multimodal">多模态</option>
+                  <option value="unimodal">单模态</option>
+                </select>
+                <label class="form-label" for="btModelConfig" style="margin-top:8px;">模型配置 <span class="required">*</span></label>
+                <select id="btModelConfig" class="form-select">
+                  <option value="">请选择模型配置</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="btPromptTemplate">Prompt 模板 <span class="required">*</span></label>
+                <select id="btPromptTemplate" class="form-select">
+                  <option value="">请选择 Prompt 模板</option>
+                </select>
+              </div>
+            </div>
+            <div id="btUploadSection" style="display:none;">
+              <div class="form-group">
+                <label class="form-label">上传文件 <span class="required">*</span></label>
+                <div class="batch-upload-zone" id="btUploadZone">
+                  <div class="batch-upload-icon">&#128196;</div>
+                  <p class="batch-upload-text">将 Excel 文件拖拽到此处，或点击选择文件</p>
+                  <p class="batch-upload-hint" id="btUploadHint">仅支持 .xlsx 格式，最大 50MB，单次最多 10000 条</p>
+                  <input type="file" id="btFileInput" accept=".xlsx" style="display:none;">
+                  <div id="btFileInfo" style="display:none;margin-top:8px;"></div>
+                </div>
+                <div style="margin-top:8px;">
+                  <button type="button" class="btn-link" id="btnDownloadTemplate">下载模板</button>
+                  <span class="form-hint" id="btTemplateHint" style="display:none;"></span>
+                </div>
+              </div>
+            </div>
+            <div id="btParsePreview" style="display:none;"></div>
+            <div class="form-actions">
+              <button type="submit" class="btn btn-primary" id="btnCreateBatchTask">创建任务</button>
+              <span class="form-hint-inline" id="btCreateStatus"></span>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <!-- 任务列表面板 -->
+      <div class="bt-panel" id="bt-panel-list">
+        <div class="card">
+          <div class="list-page-header">
+            <div>
+              <h2 class="card-title">批量任务列表</h2>
+              <p class="card-desc">查看所有批量检测任务及执行状态。</p>
+            </div>
+          </div>
+          <div class="filter-bar">
+            <input type="text" id="filterBtSearch" class="form-input filter-input" placeholder="搜索任务名称/ID">
+            <select id="filterBtStatus" class="form-select filter-select">
+              <option value="">全部状态</option>
+              <option value="pending">待执行</option>
+              <option value="running">执行中</option>
+              <option value="paused">已暂停</option>
+              <option value="cancelled">已取消</option>
+              <option value="completed">已完成</option>
+              <option value="partial_failed">部分失败</option>
+              <option value="failed">执行失败</option>
+            </select>
+          </div>
+          <div class="table-wrap">
+            <table class="table" id="batchTaskTable">
+              <thead>
+                <tr>
+                  <th>任务ID</th>
+                  <th>任务名称</th>
+                  <th>模型配置</th>
+                  <th>Prompt</th>
+                  <th>状态</th>
+                  <th>进度</th>
+                  <th>总数</th>
+                  <th>通过</th>
+                  <th>违规</th>
+                  <th>失败</th>
+                  <th>创建时间</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody id="batchTaskTableBody">
+                <tr><td colspan="12" class="table-empty">暂无批量检测任务</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="table-footer">
+            <span id="batchTaskCount">共 0 条</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 批量检测 - 任务详情页 -->
+    <section class="tab-content" id="tab-batch-test-detail">
+      <div class="card">
+        <div class="card-header">
+          <div style="display:flex;align-items:center;gap:12px;">
+            <button type="button" class="btn btn-secondary" id="btnBtBack">← 返回列表</button>
+            <h2 class="card-title" id="btDetailTitle">任务详情</h2>
+          </div>
+          <div id="btDetailActions"></div>
+        </div>
+        <div id="btDetailContent"></div>
+      </div>
+    </section>
+    </main>
+  </div>
+
+  <!-- Rule Edit Modal -->
+  <div class="modal-overlay" id="ruleModal" style="display:none">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="ruleModalTitle">新增关键词</h3>
+        <button class="modal-close" id="btnRuleModalClose">&times;</button>
+      </div>
+      <form id="ruleForm">
+        <input type="hidden" id="ruleId">
+        <div class="form-group">
+          <label class="form-label" for="ruleKeyword">关键词 <span class="required">*</span></label>
+          <input type="text" id="ruleKeyword" class="form-input" placeholder="请输入关键词" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="ruleLabel">审核标签 <span class="required">*</span></label>
+          <input type="text" id="ruleLabel" class="form-input" placeholder="例如：涉政风险、色情低俗" required>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label" for="ruleRiskLevel">风险等级 <span class="required">*</span></label>
+            <select id="ruleRiskLevel" class="form-select" required>
+              <option value="low">低危</option>
+              <option value="medium">中危</option>
+              <option value="high">高危</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="ruleAuditResult">审核结果 <span class="required">*</span></label>
+            <select id="ruleAuditResult" class="form-select" required>
+              <option value="pass">通过</option>
+              <option value="suspect">疑似</option>
+              <option value="violate">违规</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="ruleRemark">备注</label>
+          <input type="text" id="ruleRemark" class="form-input" placeholder="可选备注">
+        </div>
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary" id="btnRuleSubmit">保存</button>
+          <button type="button" class="btn btn-secondary" id="btnRuleCancel">取消</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- History Detail Modal -->
+  <div class="modal-overlay" id="historyModal" style="display:none">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>检测详情</h3>
+        <button class="modal-close" id="btnHistoryModalClose">&times;</button>
+      </div>
+      <div id="historyDetailContent"></div>
+    </div>
+  </div>
+
+  <!-- Batch Item Detail Modal -->
+  <div class="modal-overlay" id="batchItemModal" style="display:none;">
+    <div class="modal" style="max-width:640px;">
+      <div class="modal-header">
+        <h3>检测明细</h3>
+        <button class="modal-close" id="btnBatchItemModalClose">&times;</button>
+      </div>
+      <div id="batchItemModalContent" style="max-height:60vh;overflow-y:auto;"></div>
+    </div>
+  </div>
+
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
