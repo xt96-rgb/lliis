@@ -9,14 +9,25 @@
 <body>
   <header class="header">
     <div class="header-inner">
-      <h1 class="logo">内容检测平台</h1>
-      <span class="header-badge">MVP v1.0</span>
+      <a class="logo" href="#">
+        <svg class="logo-icon" width="36" height="36" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <linearGradient id="logoGrad" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stop-color="#409eff"/>
+              <stop offset="100%" stop-color="#1e3c72"/>
+            </linearGradient>
+          </defs>
+          <path d="M24 3L5 10.5V24C5 32.5 13.5 41 24 45C34.5 41 43 32.5 43 24V10.5L24 3Z" fill="url(#logoGrad)" stroke="#fff" stroke-width="1.5" stroke-linejoin="round"/>
+          <polyline points="18,24 22,28 30,20" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <span class="logo-text">内容检测平台</span>
+      </a>
     </div>
   </header>
 
   <div class="layout">
     <!-- Sidebar Menu -->
-    <aside class="sidebar">
+    <aside class="sidebar" id="sidebar">
       <nav class="sidebar-menu">
         <a class="menu-item active" data-menu="detect">
           <span class="menu-icon">&#9744;</span>
@@ -30,12 +41,12 @@
           <span class="menu-icon">&#9776;</span>
           <span>检测记录</span>
         </a>
-        <a class="menu-item menu-parent" data-menu="model">
+        <a class="menu-item menu-parent collapsed" data-menu="model">
           <span class="menu-icon">&#9883;</span>
           <span>大模型审核配置</span>
           <span class="menu-arrow">&#9662;</span>
         </a>
-        <div class="menu-sub-items">
+        <div class="menu-sub-items" style="display:none">
           <a class="menu-sub-item" data-menu="model-config">
             <span class="sub-item-dot"></span>模型接入配置
           </a>
@@ -49,7 +60,29 @@
             <span class="sub-item-dot"></span>批量检测
           </a>
         </div>
+        <a class="menu-item menu-parent collapsed" data-menu="annotation">
+          <span class="menu-icon">&#9998;</span>
+          <span>数据标注</span>
+          <span class="menu-arrow">&#9662;</span>
+        </a>
+        <div class="menu-sub-items" style="display:none">
+          <a class="menu-sub-item" data-menu="annotation-image-multi">
+            <span class="sub-item-dot"></span>图片分类标注
+          </a>
+          <a class="menu-sub-item" data-menu="annotation-image-eval">
+            <span class="sub-item-dot"></span>图片合规评估
+          </a>
+          <a class="menu-sub-item" data-menu="annotation-text-multi">
+            <span class="sub-item-dot"></span>文本评论标注
+          </a>
+        </div>
       </nav>
+      <div class="sidebar-bottom">
+        <span class="sidebar-version">v1.0.0</span>
+        <button class="sidebar-toggle" id="sidebarToggle" title="收起/展开菜单">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M10 3L5 8l5 5" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+      </div>
     </aside>
 
     <!-- Main Content -->
@@ -682,6 +715,45 @@
       </div>
     </section>
 
+    <!-- ============================================================
+       数据标注工作台
+    ============================================================ -->
+    <section class="tab-content" id="tab-annotation">
+      <div class="card annotation-card">
+        <h2 class="card-title" id="annoPageTitle">图片分类标注</h2>
+        <p class="card-desc" id="annoPageDesc">对图片进行多标签分类标注，支持自定义标签库管理</p>
+
+        <!-- 标签管理区 -->
+        <div id="annoTagManager" class="anno-tag-manager">
+          <div class="anno-tag-input-row">
+            <input type="text" id="annoNewTagInput" class="form-input" placeholder="批量添加标签，用逗号分隔（例如：涉政,违禁,广告,色情）" style="flex:1;">
+            <button class="btn btn-primary btn-sm" id="annoAddTagBtn">添加标签</button>
+            <button class="btn btn-danger btn-sm" id="annoClearAllTagsBtn">清除所有标签</button>
+          </div>
+          <div class="anno-tag-list" id="annoTagList"></div>
+        </div>
+
+        <!-- 动态导入区 -->
+        <div id="annoImportArea" class="anno-import-area"></div>
+
+        <!-- 状态栏 -->
+        <div class="anno-status-bar">
+          <span>标签数量：<span id="annoTagCount">0</span></span>
+          <span>已标注：<span id="annoDoneCount">0</span> / <span id="annoTotalCount">0</span></span>
+        </div>
+
+        <!-- 数据展示容器 -->
+        <div id="annoDataContainer" class="anno-gallery"></div>
+        <div id="annoPagination" class="batch-pagination"></div>
+
+        <!-- 操作按钮 -->
+        <div class="form-actions">
+          <button class="btn btn-primary" id="annoExportBtn">导出结果</button>
+          <button class="btn btn-danger" id="annoClearDataBtn">清空当前数据</button>
+        </div>
+      </div>
+    </section>
+
     <!-- 批量检测 - 任务详情页 -->
     <section class="tab-content" id="tab-batch-test-detail">
       <div class="card">
@@ -765,6 +837,12 @@
       </div>
       <div id="batchItemModalContent" style="max-height:60vh;overflow-y:auto;"></div>
     </div>
+  </div>
+
+  <!-- Annotation Image Zoom Modal -->
+  <div class="anno-zoom-overlay" id="annoImageModal" style="display:none;" onclick="document.getElementById('annoImageModal').style.display='none'">
+    <button class="anno-zoom-close" onclick="document.getElementById('annoImageModal').style.display='none'">&times;</button>
+    <img id="annoModalImage" src="" onclick="event.stopPropagation()">
   </div>
 
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
