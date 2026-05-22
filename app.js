@@ -325,15 +325,51 @@
   }
 
   // ── Menu Navigation ────────────────────────────────────────────
+  function setMenuParentOpen(parentItem, open) {
+    if (!parentItem) return;
+    parentItem.classList.toggle('is-open', open);
+    parentItem.setAttribute('aria-expanded', open ? 'true' : 'false');
+  }
+
+  function closeAllMenuParents(exceptItem) {
+    document.querySelectorAll('.menu-parent').forEach(function (el) {
+      if (el !== exceptItem) setMenuParentOpen(el, false);
+    });
+  }
+
+  function openParentForSubMenu(menuName) {
+    var subTarget = document.querySelector('.menu-sub-item[data-menu="' + menuName + '"]');
+    if (!subTarget) return;
+    var subItems = subTarget.closest('.menu-sub-items');
+    var parentItem = subItems ? subItems.previousElementSibling : null;
+    if (parentItem) {
+      closeAllMenuParents(parentItem);
+      setMenuParentOpen(parentItem, true);
+    }
+  }
+
+  function setSidebarCollapsed(collapsed) {
+    var sidebar = document.getElementById('sidebar');
+    var toggle = document.getElementById('sidebarToggle');
+    if (!sidebar) return;
+    if (collapsed) closeAllMenuParents();
+    sidebar.classList.toggle('is-collapsed', collapsed);
+    if (toggle) toggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+    localStorage.setItem('sidebar_collapsed', collapsed ? '1' : '0');
+  }
+
   function switchMenu(menuName) {
     document.querySelectorAll('.menu-sub-item').forEach(function (m) { m.classList.remove('active'); });
     var subTarget = document.querySelector('.menu-sub-item[data-menu="' + menuName + '"]');
-    if (subTarget) subTarget.classList.add('active');
+    if (subTarget) {
+      subTarget.classList.add('active');
+      openParentForSubMenu(menuName);
+    }
 
     document.querySelectorAll('.menu-item').forEach(function (m) { m.classList.remove('active'); });
 
     // Annotation sub-pages: all map to the unified annotation tab
-    var annoModes = ['annotation-image-multi', 'annotation-image-eval', 'annotation-text-multi'];
+    var annoModes = ['annotation-image-multi', 'annotation-image-eval'];
     var isAnnoPage = annoModes.indexOf(menuName) !== -1;
 
     // Edit/detail sub-pages: highlight the parent menu item
@@ -341,7 +377,11 @@
     if (subTarget || isEditPage || isAnnoPage) {
       var parentMenu = isAnnoPage ? 'annotation' : 'model';
       var parentItem = document.querySelector('.menu-parent[data-menu="' + parentMenu + '"]');
-      if (parentItem) parentItem.classList.add('active');
+      if (parentItem) {
+        parentItem.classList.add('active');
+        closeAllMenuParents(parentItem);
+        setMenuParentOpen(parentItem, true);
+      }
       // Highlight the list sub-item matching the edit/detail page
       var listName = menuName;
       if (menuName === 'model-config-edit') listName = 'model-config';
@@ -352,6 +392,7 @@
         if (listItem) listItem.classList.add('active');
       }
     } else {
+      closeAllMenuParents();
       var topTarget = document.querySelector('.menu-item[data-menu="' + menuName + '"]');
       if (topTarget) topTarget.classList.add('active');
     }
@@ -367,7 +408,6 @@
       var modeMap = {
         'annotation-image-multi': 'imageMulti',
         'annotation-image-eval': 'imageEval',
-        'annotation-text-multi': 'textMulti'
       };
       switchAnnoMode(modeMap[menuName]);
     }
@@ -2562,7 +2602,7 @@
     annoState.tags = annoState.tags.filter(function (t) { return t !== tagName; });
     saveAnnoTags();
     renderAnnoTagList();
-    if (annoState.mode === 'imageMulti' || annoState.mode === 'textMulti') {
+    if (annoState.mode === 'imageMulti') {
       annoState.dataset.forEach(function (item) {
         if (item.tags) item.tags = item.tags.filter(function (t) { return t !== tagName; });
       });
@@ -2590,7 +2630,7 @@
     annoState.tags = [];
     saveAnnoTags();
     renderAnnoTagList();
-    if (annoState.mode === 'imageMulti' || annoState.mode === 'textMulti') {
+    if (annoState.mode === 'imageMulti') {
       annoState.dataset.forEach(function (item) { if (item.tags) item.tags = []; });
       renderAnnoCurrentPage();
       updateAnnoStatus();
@@ -2600,7 +2640,7 @@
   function updateAnnoStatus() {
     var total = annoState.dataset.length;
     var completed = 0;
-    if (annoState.mode === 'imageMulti' || annoState.mode === 'textMulti') {
+    if (annoState.mode === 'imageMulti') {
       completed = annoState.dataset.filter(function (item) { return item.tags && item.tags.length > 0; }).length;
     } else if (annoState.mode === 'imageEval') {
       completed = annoState.dataset.filter(function (item) { return item.status && item.status !== ''; }).length;
@@ -2623,7 +2663,7 @@
     var start = (annoState.page - 1) * annoState.pageSize;
     var pageData = annoState.dataset.slice(start, start + annoState.pageSize);
     var container = document.getElementById('annoDataContainer');
-    var isGrid = (annoState.mode !== 'textMulti');
+    var isGrid = true;
     if (container) container.className = isGrid ? 'anno-gallery' : 'anno-gallery list-view';
 
     var html = '';
@@ -2634,8 +2674,6 @@
         html += renderAnnoImageMultiCard(item, gIdx);
       } else if (annoState.mode === 'imageEval') {
         html += renderAnnoImageEvalCard(item, gIdx);
-      } else if (annoState.mode === 'textMulti') {
-        html += renderAnnoTextMultiCard(item, gIdx);
       }
     }
     if (container) container.innerHTML = html;
@@ -2710,21 +2748,6 @@
       '</div>';
   }
 
-  function renderAnnoTextMultiCard(item, idx) {
-    var tagsHtml = '';
-    for (var t = 0; t < annoState.tags.length; t++) {
-      var tag = annoState.tags[t];
-      var selected = item.tags && item.tags.indexOf(tag) !== -1;
-      tagsHtml += '<button class="anno-tag-btn' + (selected ? ' selected' : '') + '" onclick="window._annoToggleTag(' + idx + ',\'' + escapeHtmlAnno(tag) + '\')">' + escapeHtmlAnno(tag) + '</button>';
-    }
-    return '<div class="anno-data-card">' +
-      '<div class="anno-card-title">' + escapeHtmlAnno(item.title || '无标题') + '</div>' +
-      '<div class="anno-card-content">' + escapeHtmlAnno(item.content || '无内容') + '</div>' +
-      '<div class="anno-tag-btns">' + tagsHtml + '</div>' +
-      '<span class="anno-badge">已选: ' + (item.tags && item.tags.length ? item.tags.join(', ') : '未标注') + '</span>' +
-      '</div>';
-  }
-
   // Interaction functions
   window._annoToggleTag = function (idx, tag) {
     if (!annoState.dataset[idx]) return;
@@ -2778,30 +2801,6 @@
         annoState.page = 1;
         renderAnnoCurrentPage();
       });
-    } else if (annoState.mode === 'textMulti') {
-      area.innerHTML = '<div class="file-upload-wrap">' +
-        '<input type="file" id="annoTextXlsxFile" accept=".xlsx,.xls" class="file-input">' +
-        '<label for="annoTextXlsxFile" class="file-label">选择 Excel 文件</label>' +
-        '<span class="file-hint">Excel第一列新闻标题，第二列评论内容</span>' +
-        '</div>';
-      document.getElementById('annoTextXlsxFile').addEventListener('change', function (e) {
-        var file = e.target.files[0];
-        if (!file) return;
-        var reader = new FileReader();
-        reader.onload = function (evt) {
-          var data = new Uint8Array(evt.target.result);
-          var workbook = XLSX.read(data, { type: 'array' });
-          var sheet = workbook.Sheets[workbook.SheetNames[0]];
-          var rows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
-          if (rows.length < 2) return;
-          annoState.dataset = rows.slice(1).filter(function (r) { return r[0] && r[1]; }).map(function (r) {
-            return { title: String(r[0]), content: String(r[1]), tags: [] };
-          });
-          annoState.page = 1;
-          renderAnnoCurrentPage();
-        };
-        reader.readAsArrayBuffer(file);
-      });
     }
   }
 
@@ -2811,11 +2810,10 @@
     annoState.page = 1;
 
     // Update page title and description per mode
-    var titles = { imageMulti: '图片分类标注', imageEval: '图片合规评估', textMulti: '文本评论标注' };
+    var titles = { imageMulti: '图片分类标注', imageEval: '图片合规评估' };
     var descs = {
       imageMulti: '对图片进行多标签分类标注，支持自定义标签库管理',
-      imageEval: '对图片机审结果进行符合/不符合评估，支持填写不符合理由',
-      textMulti: '对文本评论进行多标签分类标注，支持 Excel 批量导入'
+      imageEval: '对图片机审结果进行符合/不符合评估，支持填写不符合理由'
     };
     var titleEl = document.getElementById('annoPageTitle');
     var descEl = document.getElementById('annoPageDesc');
@@ -2824,7 +2822,11 @@
 
     // Toggle tag manager visibility
     var tagMgr = document.getElementById('annoTagManager');
-    if (tagMgr) tagMgr.style.display = (mode === 'imageMulti' || mode === 'textMulti') ? 'block' : 'none';
+    if (tagMgr) tagMgr.style.display = (mode === 'imageMulti') ? 'block' : 'none';
+
+    // Toggle tag count display in status bar (imageEval doesn't need it)
+    var tagCountEl = document.getElementById('annoTagCount');
+    if (tagCountEl) tagCountEl.parentElement.style.display = (mode === 'imageMulti') ? '' : 'none';
 
     renderAnnoCurrentPage();
     renderAnnoImportArea();
@@ -2845,11 +2847,6 @@
       annoState.dataset.forEach(function (item) { rows.push([item.url, item.machineTag || '', item.status || '', item.reason || '']); });
       filename = '图片合规评估.csv';
       downloadAnnoCSV(rows, filename);
-    } else if (annoState.mode === 'textMulti') {
-      rows = [['新闻标题', '评论内容', '标注标签']];
-      annoState.dataset.forEach(function (item) { rows.push([item.title, item.content, (item.tags || []).join(';')]); });
-      filename = '文本标注结果.xlsx';
-      downloadAnnoXLSX(rows, filename);
     }
   }
 
@@ -2861,13 +2858,6 @@
     link.download = filename;
     link.click();
     URL.revokeObjectURL(link.href);
-  }
-
-  function downloadAnnoXLSX(data, filename) {
-    var ws = XLSX.utils.aoa_to_sheet(data);
-    var wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
-    XLSX.writeFile(wb, filename);
   }
 
   function clearAnnoData() {
@@ -2889,25 +2879,18 @@
       }
       var parentItem = e.target.closest('.menu-parent');
       if (parentItem) {
-        // In collapsed mode, clicking parent opens the submenu dropdown
         var sidebar = document.getElementById('sidebar');
-        if (sidebar && sidebar.classList.contains('collapsed')) return; // hover handles it
-
-        // Accordion: only one sub-menu open at a time; clicking an open one closes it
-        var isOpen = !parentItem.classList.contains('collapsed');
-        if (isOpen) {
-          parentItem.classList.add('collapsed');
-          parentItem.nextElementSibling.style.display = 'none';
-        } else {
-          document.querySelectorAll('.menu-parent').forEach(function (el) {
-            el.classList.add('collapsed');
-            if (el.nextElementSibling && el.nextElementSibling.classList.contains('menu-sub-items')) {
-              el.nextElementSibling.style.display = 'none';
-            }
-          });
-          parentItem.classList.remove('collapsed');
-          parentItem.nextElementSibling.style.display = '';
+        if (sidebar && sidebar.classList.contains('is-collapsed')) {
+          setSidebarCollapsed(false);
+          window.setTimeout(function () {
+            closeAllMenuParents(parentItem);
+            setMenuParentOpen(parentItem, true);
+          }, 230);
+          return;
         }
+        var isOpen = parentItem.classList.contains('is-open');
+        closeAllMenuParents(parentItem);
+        setMenuParentOpen(parentItem, !isOpen);
         return;
       }
       var topItem = e.target.closest('.menu-item');
@@ -2917,18 +2900,13 @@
       }
     });
 
-    // Sidebar collapse/expand toggle
     document.getElementById('sidebarToggle').addEventListener('click', function () {
       var sidebar = document.getElementById('sidebar');
-      var collapsed = sidebar.classList.toggle('collapsed');
-      localStorage.setItem('sidebar_collapsed', collapsed ? '1' : '0');
+      setSidebarCollapsed(!sidebar.classList.contains('is-collapsed'));
     });
 
-    // Restore sidebar state
     (function () {
-      if (localStorage.getItem('sidebar_collapsed') === '1') {
-        document.getElementById('sidebar').classList.add('collapsed');
-      }
+      setSidebarCollapsed(localStorage.getItem('sidebar_collapsed') === '1');
     })();
 
     // Detect form submit
