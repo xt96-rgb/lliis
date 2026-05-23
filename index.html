@@ -76,10 +76,13 @@
         </a>
         <div class="menu-sub-items">
           <a class="menu-sub-item" data-menu="annotation-image-multi">
-            <span class="sub-item-dot"></span>图片分类标注
+            <span class="sub-item-dot"></span>图片标注
           </a>
           <a class="menu-sub-item" data-menu="annotation-image-eval">
-            <span class="sub-item-dot"></span>图片合规评估
+            <span class="sub-item-dot"></span>图片评估
+          </a>
+          <a class="menu-sub-item" data-menu="annotation-comment">
+            <span class="sub-item-dot"></span>评论标注
           </a>
         </div>
       </nav>
@@ -751,6 +754,66 @@
           <button class="btn btn-primary" id="annoExportBtn">导出结果</button>
           <button class="btn btn-danger" id="annoClearDataBtn">清空当前数据</button>
         </div>
+      </div>
+    </section>
+
+    <!-- ============================================================
+       评论标注工作台
+    ============================================================ -->
+    <section class="tab-content" id="tab-annotation-comment">
+      <div class="card annotation-card">
+        <h2 class="card-title">评论标注</h2>
+        <p class="card-desc">上传 Excel 后以卡片方式逐条打标签，支持自定义标签库管理</p>
+
+        <!-- 标签管理区 -->
+        <div class="anno-tag-manager" id="commentTagManager">
+          <div class="anno-tag-input-row">
+            <input type="text" id="commentTagInput" class="form-input" placeholder="输入新标签，如 色情" style="flex:1;">
+            <button class="btn btn-primary btn-sm" id="commentAddTagBtn">添加标签</button>
+          </div>
+          <div class="anno-tag-list" id="commentTagList"></div>
+        </div>
+
+        <!-- 工具栏 -->
+        <div class="filter-bar" style="flex-wrap:wrap;">
+          <button class="btn btn-secondary btn-sm" id="commentDownloadTemplateBtn">下载模板</button>
+          <label class="btn btn-primary btn-sm">
+            上传 Excel
+            <input id="commentFileInput" type="file" accept=".xlsx,.xls" style="display:none;">
+          </label>
+          <button class="btn btn-primary btn-sm" id="commentExportBtn">导出结果</button>
+          <button class="btn btn-danger btn-sm" id="commentClearBtn">清空数据</button>
+        </div>
+
+        <!-- 状态栏 -->
+        <div class="anno-status-bar">
+          <span>文件：<span id="commentFileName">尚未上传文件</span></span>
+          <span>总量：<b id="commentTotalCount">0</b></span>
+          <span>已标注：<b id="commentLabeledCount">0</b></span>
+          <span id="commentUnlabeledWrap" style="cursor:pointer;" title="点击跳转到下一条未标注评论">未标注：<b id="commentUnlabeledCount">0</b></span>
+        </div>
+
+        <!-- 筛选区 -->
+        <div class="filter-bar">
+          <input type="text" id="commentSearchInput" class="form-input filter-input" placeholder="搜索标题、评论或辅助字段" style="max-width:260px;">
+          <select id="commentStatusFilter" class="form-select filter-select">
+            <option value="all">全部状态</option>
+            <option value="labeled">已标注</option>
+            <option value="unlabeled">未标注</option>
+          </select>
+          <select id="commentTagFilter" class="form-select filter-select">
+            <option value="all">全部标签</option>
+          </select>
+        </div>
+
+        <!-- 分页（上） -->
+        <div id="commentTopPagination" class="batch-pagination" style="display:none;"></div>
+
+        <!-- 卡片容器 -->
+        <div id="commentCardContainer"></div>
+
+        <!-- 分页（下） -->
+        <div id="commentBottomPagination" class="batch-pagination" style="display:none;"></div>
       </div>
     </section>
 

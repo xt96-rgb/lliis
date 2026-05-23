@@ -371,11 +371,12 @@
     // Annotation sub-pages: all map to the unified annotation tab
     var annoModes = ['annotation-image-multi', 'annotation-image-eval'];
     var isAnnoPage = annoModes.indexOf(menuName) !== -1;
+    var isCommentPage = menuName === 'annotation-comment';
 
     // Edit/detail sub-pages: highlight the parent menu item
     var isEditPage = menuName === 'model-config-edit' || menuName === 'prompt-config-edit' || menuName === 'batch-test-detail';
-    if (subTarget || isEditPage || isAnnoPage) {
-      var parentMenu = isAnnoPage ? 'annotation' : 'model';
+    if (subTarget || isEditPage || isAnnoPage || isCommentPage) {
+      var parentMenu = (isAnnoPage || isCommentPage) ? 'annotation' : 'model';
       var parentItem = document.querySelector('.menu-parent[data-menu="' + parentMenu + '"]');
       if (parentItem) {
         parentItem.classList.add('active');
@@ -400,7 +401,10 @@
     document.querySelectorAll('.tab-content').forEach(function (c) { c.classList.remove('active'); });
 
     // Annotation sub-items all go to the unified annotation tab
-    var tabId = isAnnoPage ? 'tab-annotation' : 'tab-' + menuName;
+    var tabId;
+    if (isAnnoPage) tabId = 'tab-annotation';
+    else if (isCommentPage) tabId = 'tab-annotation-comment';
+    else tabId = 'tab-' + menuName;
     var tabEl = document.getElementById(tabId);
     if (tabEl) tabEl.classList.add('active');
 
@@ -410,6 +414,10 @@
         'annotation-image-eval': 'imageEval',
       };
       switchAnnoMode(modeMap[menuName]);
+    }
+
+    if (isCommentPage) {
+      initCommentLabeling();
     }
 
     if (menuName === 'single-test') {
@@ -2810,7 +2818,7 @@
     annoState.page = 1;
 
     // Update page title and description per mode
-    var titles = { imageMulti: '图片分类标注', imageEval: '图片合规评估' };
+    var titles = { imageMulti: '图片标注', imageEval: '图片评估' };
     var descs = {
       imageMulti: '对图片进行多标签分类标注，支持自定义标签库管理',
       imageEval: '对图片机审结果进行符合/不符合评估，支持填写不符合理由'
@@ -3156,6 +3164,69 @@
     document.getElementById('annoImageModal').addEventListener('click', function (e) {
       if (e.target === this) this.style.display = 'none';
     });
+
+    // ── Comment Labeling Workbench events ──────────────────────────
+    // Tag management
+    document.getElementById('commentAddTagBtn').addEventListener('click', addCommentTag);
+    document.getElementById('commentTagInput').addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); addCommentTag(); }
+    });
+    document.getElementById('commentTagList').addEventListener('click', function (e) {
+      var tag = e.target.getAttribute('data-comment-remove-tag');
+      if (tag) removeCommentTag(tag);
+    });
+
+    // File operations
+    document.getElementById('commentDownloadTemplateBtn').addEventListener('click', downloadCommentTemplate);
+    document.getElementById('commentExportBtn').addEventListener('click', exportCommentResult);
+    document.getElementById('commentClearBtn').addEventListener('click', clearCommentAll);
+    document.getElementById('commentFileInput').addEventListener('change', function () {
+      if (this.files && this.files[0]) handleCommentFile(this.files[0]);
+    });
+
+    // Filters
+    document.getElementById('commentSearchInput').addEventListener('input', function () {
+      commentState.nextUnlabeledCursor = 0;
+      commentState.currentPage = 1;
+      renderCommentCards();
+    });
+    document.getElementById('commentStatusFilter').addEventListener('change', function () {
+      commentState.nextUnlabeledCursor = 0;
+      commentState.currentPage = 1;
+      renderCommentCards();
+    });
+    document.getElementById('commentTagFilter').addEventListener('change', function () {
+      commentState.nextUnlabeledCursor = 0;
+      commentState.currentPage = 1;
+      renderCommentCards();
+    });
+
+    // Jump to next unlabeled
+    document.getElementById('commentUnlabeledWrap').addEventListener('click', jumpToNextCommentUnlabeled);
+
+    // Pagination (both top and bottom)
+    [document.getElementById('commentTopPagination'), document.getElementById('commentBottomPagination')].forEach(function (el) {
+      el.addEventListener('click', function (e) {
+        var page = e.target.getAttribute('data-comment-page');
+        if (page) changeCommentPage(page);
+      });
+    });
+
+    // Card container: label selection, clear row, reason textarea
+    document.getElementById('commentCardContainer').addEventListener('click', function (e) {
+      var lbl = e.target.getAttribute('data-comment-label');
+      var clr = e.target.getAttribute('data-comment-clear');
+      if (lbl) {
+        var parts = lbl.split('|');
+        selectCommentLabel(parts[0], parts.slice(1).join('|'));
+      }
+      if (clr) clearCommentRow(clr);
+    });
+    document.getElementById('commentCardContainer').addEventListener('input', function (e) {
+      var id = e.target.getAttribute('data-comment-reason');
+      if (id) updateCommentReason(id);
+    });
+
     document.getElementById('btnBtBack').addEventListener('click', backToBatchList);
     document.getElementById('btnDownloadTemplate').addEventListener('click', downloadBatchTemplate);
 
@@ -3256,6 +3327,402 @@
     document.getElementById('filterBtSearch').addEventListener('input', function () {
       renderBatchTaskList();
     });
+  }
+
+  // ── Comment Labeling Workbench ─────────────────────────────────
+
+  var commentState = {
+    tags: ['正常', '涉政', '色情', '谩骂', '广告', '违禁', '灌水', '竞品', '其他'],
+    rows: [],
+    auxHeaders: [],
+    nextUnlabeledCursor: 0,
+    currentPage: 1,
+    pageSize: 20
+  };
+
+  var STORAGE_COMMENT_TAGS = 'content_detection_comment_tags';
+
+  function loadCommentTags() {
+    try {
+      var raw = localStorage.getItem(STORAGE_COMMENT_TAGS);
+      if (raw) { var arr = JSON.parse(raw); if (Array.isArray(arr) && arr.length) commentState.tags = arr; }
+    } catch (e) { /* use defaults */ }
+  }
+  function saveCommentTags() {
+    localStorage.setItem(STORAGE_COMMENT_TAGS, JSON.stringify(commentState.tags));
+  }
+
+  function escComment(s) {
+    return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  function renderCommentTags() {
+    var list = document.getElementById('commentTagList');
+    if (!list) return;
+    list.innerHTML = commentState.tags.map(function (tag) {
+      return '<span class="anno-tag-pill">' + escComment(tag) + '<button data-comment-remove-tag="' + escComment(tag) + '">&times;</button></span>';
+    }).join('');
+    // Update tag filter dropdown
+    var filter = document.getElementById('commentTagFilter');
+    if (!filter) return;
+    var cur = filter.value;
+    filter.innerHTML = '<option value="all">全部标签</option>' + commentState.tags.map(function (t) { return '<option value="' + escComment(t) + '">' + escComment(t) + '</option>'; }).join('');
+    filter.value = commentState.tags.indexOf(cur) !== -1 ? cur : 'all';
+  }
+
+  function addCommentTag() {
+    var input = document.getElementById('commentTagInput');
+    if (!input) return;
+    var val = input.value.trim();
+    if (!val) return;
+    if (commentState.tags.indexOf(val) !== -1) return;
+    commentState.tags.push(val);
+    input.value = '';
+    saveCommentTags();
+    renderCommentTags();
+    renderCommentCards();
+  }
+
+  function removeCommentTag(tag) {
+    commentState.tags = commentState.tags.filter(function (t) { return t !== tag; });
+    saveCommentTags();
+    renderCommentTags();
+    renderCommentCards();
+  }
+
+  function downloadCommentTemplate() {
+    if (!window.XLSX) return;
+    var rows = [
+      ['标题', '评论', '辅助信息1', '辅助信息2', '辅助信息3'],
+      ['示例标题：新品发布讨论', '这个功能看起来不错，想试试', '用户等级：普通用户', '来源：社区评论', '发布时间：2026-05-22']
+    ];
+    var ws = XLSX.utils.aoa_to_sheet(rows);
+    ws['!cols'] = [{ wch: 28 }, { wch: 46 }, { wch: 24 }, { wch: 24 }, { wch: 24 }];
+    var wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, '评论标注模板');
+    XLSX.writeFile(wb, '评论标注模板.xlsx');
+  }
+
+  function handleCommentFile(file) {
+    if (!file) return;
+    if (!/\.(xlsx|xls)$/i.test(file.name)) { alert('请上传 .xlsx 或 .xls 文件'); return; }
+    var reader = new FileReader();
+    reader.onload = function (e) {
+      try {
+        var wb = XLSX.read(e.target.result, { type: 'array' });
+        var sheet = wb.Sheets[wb.SheetNames[0]];
+        var matrix = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+        parseCommentMatrix(matrix, file.name);
+      } catch (err) { alert('Excel 解析失败：' + err.message); }
+    };
+    reader.readAsArrayBuffer(file);
+  }
+
+  function parseCommentMatrix(matrix, fileName) {
+    function norm(v) { return String(v == null ? '' : v).trim(); }
+    var nonEmpty = matrix.filter(function (r) { return r.some(function (c) { return norm(c); }); });
+    if (nonEmpty.length < 2) { alert('Excel 至少需要包含表头和 1 条数据'); return; }
+
+    var headers = nonEmpty[0].map(norm);
+    var ti = headers.indexOf('标题');
+    var ci = headers.indexOf('评论');
+    if (ti === -1 || ci === -1) { alert('模板格式错误：必须包含「标题」「评论」两列'); return; }
+
+    var auxH = headers.filter(function (h, i) { return h && i !== ti && i !== ci; }).slice(0, 3);
+    commentState.auxHeaders = auxH;
+
+    commentState.rows = nonEmpty.slice(1).map(function (row, idx) {
+      var aux = {};
+      auxH.forEach(function (h) {
+        var si = headers.indexOf(h);
+        aux[h] = norm(row[si]);
+      });
+      return {
+        id: 'CR' + Date.now().toString(36) + idx,
+        index: idx + 1,
+        title: norm(row[ti]),
+        comment: norm(row[ci]),
+        aux: aux,
+        label: '',
+        reason: ''
+      };
+    }).filter(function (item) { return item.title || item.comment || Object.values(item.aux).some(function (v) { return v; }); });
+
+    commentState.nextUnlabeledCursor = 0;
+    commentState.currentPage = 1;
+    document.getElementById('commentFileName').textContent = fileName;
+    document.getElementById('commentFileInput').value = '';
+    renderCommentCards();
+  }
+
+  function getCommentFilteredRows() {
+    var keyword = (document.getElementById('commentSearchInput').value || '').trim().toLowerCase();
+    var status = document.getElementById('commentStatusFilter').value;
+    var tag = document.getElementById('commentTagFilter').value;
+    return commentState.rows.filter(function (row) {
+      var hay = [row.title, row.comment].concat(Object.values(row.aux)).join(' ').toLowerCase();
+      var kw = !keyword || hay.indexOf(keyword) !== -1;
+      var st = status === 'all' || (status === 'labeled' ? !!row.label : !row.label);
+      var tg = tag === 'all' || row.label === tag;
+      return kw && st && tg;
+    });
+  }
+
+  function getCommentPageCount(filtered) {
+    return Math.max(1, Math.ceil((filtered || getCommentFilteredRows()).length / commentState.pageSize));
+  }
+
+  function renderCommentPagination(filtered) {
+    var total = filtered.length;
+    var topEl = document.getElementById('commentTopPagination');
+    var botEl = document.getElementById('commentBottomPagination');
+    if (!commentState.rows.length || !total) {
+      topEl.style.display = 'none';
+      botEl.style.display = 'none';
+      return;
+    }
+    var pc = getCommentPageCount(filtered);
+    var start = (commentState.currentPage - 1) * commentState.pageSize + 1;
+    var end = Math.min(commentState.currentPage * commentState.pageSize, total);
+    var pages = buildCommentPageNumbers(commentState.currentPage, pc);
+    var btns = pages.map(function (p) {
+      return p === '...'
+        ? '<span class="page-info">...</span>'
+        : '<button class="' + (p === commentState.currentPage ? 'active' : '') + '" data-comment-page="' + p + '">' + p + '</button>';
+    }).join('');
+    var html = '<button ' + (commentState.currentPage === 1 ? 'disabled' : '') + ' data-comment-page="prev">上一页</button>'
+      + btns
+      + '<button ' + (commentState.currentPage === pc ? 'disabled' : '') + ' data-comment-page="next">下一页</button>'
+      + '<span class="page-info">' + start + '-' + end + ' / 共 ' + total + ' 条 ' + pc + ' 页</span>';
+    topEl.innerHTML = html;
+    botEl.innerHTML = html;
+    topEl.style.display = 'flex';
+    botEl.style.display = pc > 1 ? 'flex' : 'none';
+  }
+
+  function buildCommentPageNumbers(page, total) {
+    if (total <= 7) { var arr = []; for (var i = 1; i <= total; i++) arr.push(i); return arr; }
+    var pages = [1];
+    if (page > 4) pages.push('...');
+    var s = Math.max(2, page - 1);
+    var e = Math.min(total - 1, page + 1);
+    for (var i = s; i <= e; i++) pages.push(i);
+    if (page < total - 3) pages.push('...');
+    pages.push(total);
+    return pages;
+  }
+
+  function changeCommentPage(target) {
+    var filtered = getCommentFilteredRows();
+    var pc = getCommentPageCount(filtered);
+    if (target === 'prev') commentState.currentPage--;
+    else if (target === 'next') commentState.currentPage++;
+    else commentState.currentPage = Number(target);
+    commentState.currentPage = Math.max(1, Math.min(commentState.currentPage, pc));
+    renderCommentCards();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function renderCommentCards() {
+    updateCommentStats();
+
+    var container = document.getElementById('commentCardContainer');
+    if (!commentState.rows.length) {
+      document.getElementById('commentTopPagination').style.display = 'none';
+      document.getElementById('commentBottomPagination').style.display = 'none';
+      container.innerHTML = '<div class="comment-empty"><strong>暂无数据</strong>上传 Excel 后，这里会以卡片形式展示标题、评论和辅助信息。</div>';
+      return;
+    }
+
+    var filtered = getCommentFilteredRows();
+    if (!filtered.length) {
+      renderCommentPagination(filtered);
+      container.innerHTML = '<div class="comment-empty"><strong>没有匹配结果</strong>请调整搜索关键词、标注状态或标签筛选条件。</div>';
+      return;
+    }
+
+    var pc = getCommentPageCount(filtered);
+    if (commentState.currentPage > pc) commentState.currentPage = pc;
+    var start = (commentState.currentPage - 1) * commentState.pageSize;
+    var pageRows = filtered.slice(start, start + commentState.pageSize);
+
+    renderCommentPagination(filtered);
+    container.innerHTML = '<div class="comment-card-list">' + pageRows.map(renderCommentCard).join('') + '</div>';
+  }
+
+  function renderCommentCard(row) {
+    var auxEntries = Object.entries(row.aux).filter(function (e) { return String(e[1] || '').trim(); });
+    var auxHtml = auxEntries.map(function (e) {
+      return '<div class="comment-aux-box"><div class="comment-field-label">' + escComment(e[0]) + '</div><div class="comment-field-value">' + escComment(e[1]) + '</div></div>';
+    }).join('');
+    var placeholders = '';
+    for (var i = auxEntries.length; i < 3; i++) {
+      placeholders += '<div class="comment-aux-placeholder">辅助字段为空</div>';
+    }
+
+    var labelBtns = commentState.tags.map(function (tag) {
+      return '<button class="comment-label-btn' + (row.label === tag ? ' active' : '') + '" data-comment-label="' + row.id + '|' + escComment(tag) + '">' + escComment(tag) + '</button>';
+    }).join('');
+
+    var isLabeled = !!row.label;
+
+    return '<div class="comment-card-item" data-comment-id="' + row.id + '">'
+      + '<div class="comment-card-head">'
+        + '<span class="comment-card-index' + (isLabeled ? ' is-labeled' : '') + '">第 ' + row.index + ' 条' + (row.label ? ' · 已标注：' + escComment(row.label) : ' · 未标注') + '</span>'
+        + '<button class="btn btn-sm btn-secondary" data-comment-clear="' + row.id + '">清空标注</button>'
+      + '</div>'
+      + '<div class="comment-card-body">'
+        + '<div class="comment-main-col">'
+          + '<div class="comment-field-box title-box"><div class="comment-field-label">标题</div><div class="comment-field-value">' + escComment(row.title || '未填写标题') + '</div></div>'
+          + '<div class="comment-field-box comment-box"><div class="comment-field-label">评论</div><div class="comment-field-value">' + escComment(row.comment || '未填写评论') + '</div></div>'
+        + '</div>'
+        + '<div class="comment-aux-col">' + (auxHtml + placeholders || '<div class="comment-aux-placeholder">无辅助信息</div>') + '</div>'
+      + '</div>'
+      + '<div class="comment-annotation-row">'
+        + '<div class="comment-label-choices">' + (labelBtns || '<span style="color:var(--text-muted);font-size:13px;">请先在标签管理中添加标签</span>') + '</div>'
+        + '<textarea class="comment-reason-textarea" data-comment-reason="' + row.id + '" placeholder="选填：填写标注理由">' + escComment(row.reason) + '</textarea>'
+      + '</div>'
+    + '</div>';
+  }
+
+  function updateCommentStats() {
+    var labeled = commentState.rows.filter(function (r) { return r.label; }).length;
+    var total = commentState.rows.length;
+    var totalEl = document.getElementById('commentTotalCount');
+    var labeledEl = document.getElementById('commentLabeledCount');
+    var unlabeledEl = document.getElementById('commentUnlabeledCount');
+    if (totalEl) totalEl.textContent = total;
+    if (labeledEl) labeledEl.textContent = labeled;
+    if (unlabeledEl) unlabeledEl.textContent = total - labeled;
+  }
+
+  function refreshCommentCardDOM(id) {
+    var row = commentState.rows.find(function (r) { return r.id === id; });
+    if (!row) return;
+    var card = document.querySelector('[data-comment-id="' + id + '"]');
+    if (!card) return;
+
+    // Update status badge
+    var badge = card.querySelector('.comment-card-index');
+    if (badge) {
+      badge.textContent = '第 ' + row.index + ' 条' + (row.label ? ' · 已标注：' + row.label : ' · 未标注');
+      badge.classList.toggle('is-labeled', !!row.label);
+    }
+
+    // Update label button active states
+    var buttons = card.querySelectorAll('.comment-label-btn');
+    buttons.forEach(function (btn) {
+      var lbl = btn.getAttribute('data-comment-label');
+      if (lbl) {
+        var parts = lbl.split('|');
+        var tagName = parts.slice(1).join('|');
+        btn.classList.toggle('active', row.label === tagName);
+      }
+    });
+  }
+
+  function updateCommentReason(id) {
+    var row = commentState.rows.find(function (r) { return r.id === id; });
+    if (!row) return;
+    var el = document.querySelector('[data-comment-reason="' + id + '"]');
+    if (el) row.reason = el.value.trim();
+  }
+
+  function selectCommentLabel(id, label) {
+    updateCommentReason(id);
+    var row = commentState.rows.find(function (r) { return r.id === id; });
+    if (!row) return;
+    row.label = row.label === label ? '' : label;
+    updateCommentStats();
+    refreshCommentCardDOM(id);
+  }
+
+  function clearCommentRow(id) {
+    var row = commentState.rows.find(function (r) { return r.id === id; });
+    if (!row) return;
+    row.label = '';
+    row.reason = '';
+    updateCommentStats();
+    var card = document.querySelector('[data-comment-id="' + id + '"]');
+    if (card) {
+      var textarea = card.querySelector('.comment-reason-textarea');
+      if (textarea) textarea.value = '';
+    }
+    refreshCommentCardDOM(id);
+  }
+
+  function jumpToNextCommentUnlabeled() {
+    if (!commentState.rows.length) return;
+    var unlabeled = commentState.rows.filter(function (r) { return !r.label; });
+    if (!unlabeled.length) return;
+
+    var filtered = getCommentFilteredRows();
+    var visibleIds = {};
+    filtered.forEach(function (r) { visibleIds[r.id] = true; });
+    var candidates = unlabeled.filter(function (r) { return visibleIds[r.id]; });
+
+    if (!candidates.length) {
+      document.getElementById('commentStatusFilter').value = 'all';
+      document.getElementById('commentTagFilter').value = 'all';
+      document.getElementById('commentSearchInput').value = '';
+      filtered = getCommentFilteredRows();
+      candidates = commentState.rows.filter(function (r) { return !r.label; });
+    }
+
+    if (commentState.nextUnlabeledCursor >= candidates.length) commentState.nextUnlabeledCursor = 0;
+    var target = candidates[commentState.nextUnlabeledCursor];
+    commentState.nextUnlabeledCursor++;
+
+    var idx = filtered.findIndex(function (r) { return r.id === target.id; });
+    if (idx >= 0) commentState.currentPage = Math.floor(idx / commentState.pageSize) + 1;
+    renderCommentCards();
+
+    requestAnimationFrame(function () {
+      var card = document.querySelector('[data-comment-id="' + target.id + '"]');
+      if (!card) return;
+      document.querySelectorAll('.comment-card-item.focused').forEach(function (el) { el.classList.remove('focused'); });
+      card.classList.add('focused');
+      card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      setTimeout(function () { card.classList.remove('focused'); }, 1800);
+    });
+  }
+
+  function exportCommentResult() {
+    if (!commentState.rows.length) { alert('暂无可导出的数据'); return; }
+    if (!window.XLSX) { alert('XLSX 库未加载'); return; }
+    var data = commentState.rows.map(function (row) {
+      var obj = { '标题': row.title, '评论': row.comment };
+      Object.keys(row.aux).forEach(function (k) { obj[k] = row.aux[k]; });
+      obj['标签'] = row.label;
+      obj['理由'] = row.reason;
+      return obj;
+    });
+    var ws = XLSX.utils.json_to_sheet(data);
+    ws['!cols'] = Object.keys(data[0]).map(function (k) { return { wch: Math.max(12, Math.min(42, k.length + 12)) }; });
+    var wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, '标注结果');
+    XLSX.writeFile(wb, '评论标注结果.xlsx');
+  }
+
+  function clearCommentAll() {
+    if (!commentState.rows.length) return;
+    if (!confirm('确认清空当前上传数据和标注结果吗？')) return;
+    commentState.rows = [];
+    commentState.auxHeaders = [];
+    commentState.nextUnlabeledCursor = 0;
+    commentState.currentPage = 1;
+    document.getElementById('commentFileInput').value = '';
+    document.getElementById('commentFileName').textContent = '尚未上传文件';
+    document.getElementById('commentSearchInput').value = '';
+    document.getElementById('commentStatusFilter').value = 'all';
+    document.getElementById('commentTagFilter').value = 'all';
+    renderCommentCards();
+  }
+
+  function initCommentLabeling() {
+    loadCommentTags();
+    renderCommentTags();
+    renderCommentCards();
   }
 
   // ── Init ───────────────────────────────────────────────────────
