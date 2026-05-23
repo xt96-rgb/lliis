@@ -14,6 +14,13 @@
   const STORAGE_MODEL_CONFIG_OLD = 'content_detection_llm_config';
   const STORAGE_API_KEY_MASK_OLD = 'content_detection_api_key_masked';
   const STORAGE_BATCH_TASKS = 'content_detection_batch_tasks';
+  const STORAGE_SAMPLE_LIBRARY = 'content_detection_sample_library';
+  const STORAGE_SAMPLE_TAGS = 'content_detection_sample_tags';
+  const STORAGE_SAMPLE_DATASETS = 'content_detection_sample_datasets';
+  const STORAGE_SAMPLE_KNOWLEDGE = 'content_detection_sample_knowledge';
+  const STORAGE_LABEL_RULES = 'content_detection_label_rules';
+  const STORAGE_LABEL_CASES = 'content_detection_label_cases';
+  const STORAGE_LABEL_VERSIONS = 'content_detection_label_versions';
 
   // ── Default Data ───────────────────────────────────────────────
   const DEFAULT_RULES = [
@@ -82,6 +89,18 @@
     parse_fields: ['result', 'label', 'reason']
   };
 
+  var DEFAULT_SAMPLE_TAGS = [
+    { id: 'stag_1', name: '涉政', code: 'POLITICAL', level: 1, parentId: null, path: '涉政', description: '涉及政治敏感、政策攻击、政治人物、政治事件等内容', applicableContentTypes: ['text','image'], suggestedStatus: 'reject', riskLevel: 'high', status: 'active', ownerId: null, sortOrder: 1 },
+    { id: 'stag_2', name: '色情', code: 'PORN', level: 1, parentId: null, path: '色情', description: '明确色情、性交易、淫秽低俗内容', applicableContentTypes: ['text','image'], suggestedStatus: 'reject', riskLevel: 'high', status: 'active', ownerId: null, sortOrder: 2 },
+    { id: 'stag_3', name: '谩骂', code: 'ABUSE', level: 1, parentId: null, path: '谩骂', description: '侮辱、攻击、歧视、辱骂等内容', applicableContentTypes: ['text'], suggestedStatus: 'reject', riskLevel: 'medium', status: 'active', ownerId: null, sortOrder: 3 },
+    { id: 'stag_4', name: '广告', code: 'AD', level: 1, parentId: null, path: '广告', description: '营销推广、站外引流、刷量刷单等内容', applicableContentTypes: ['text','image'], suggestedStatus: 'reject', riskLevel: 'medium', status: 'active', ownerId: null, sortOrder: 4 },
+    { id: 'stag_5', name: '违禁', code: 'ILLEGAL', level: 1, parentId: null, path: '违禁', description: '违法违禁品、管制物、黑灰产服务等内容', applicableContentTypes: ['text','image'], suggestedStatus: 'reject', riskLevel: 'high', status: 'active', ownerId: null, sortOrder: 5 },
+    { id: 'stag_6', name: '暴恐', code: 'VIOLENCE', level: 1, parentId: null, path: '暴恐', description: '暴力、恐怖主义、极端组织、血腥恐吓等内容', applicableContentTypes: ['text','image'], suggestedStatus: 'reject', riskLevel: 'high', status: 'active', ownerId: null, sortOrder: 6 },
+    { id: 'stag_7', name: '未成年', code: 'MINOR', level: 1, parentId: null, path: '未成年', description: '涉及未成年人不良内容、未成年保护等问题', applicableContentTypes: ['text','image'], suggestedStatus: 'reject', riskLevel: 'high', status: 'active', ownerId: null, sortOrder: 7 },
+    { id: 'stag_8', name: '灌水', code: 'SPAM', level: 1, parentId: null, path: '灌水', description: '无意义重复内容、刷屏、恶意灌水', applicableContentTypes: ['text'], suggestedStatus: 'suspect', riskLevel: 'low', status: 'active', ownerId: null, sortOrder: 8 },
+    { id: 'stag_9', name: '其他', code: 'OTHER', level: 1, parentId: null, path: '其他', description: '其他需要关注的违规或异常内容', applicableContentTypes: ['text','image'], suggestedStatus: 'suspect', riskLevel: 'low', status: 'active', ownerId: null, sortOrder: 9 }
+  ];
+
   // ── State ──────────────────────────────────────────────────────
   let rules = [];
   let history = [];
@@ -96,6 +115,20 @@
   let pendingBatchFileData = null; // parsed Excel data awaiting task creation
   let editingRuleId = null;
   let currentContentType = 'text';
+  let sampleLibrary = [];
+  let sampleTags = [];
+  let sampleDatasets = [];
+  let sampleKnowledge = [];
+  let currentSampleId = null;
+  let slExpandedTagIds = {};
+  let slListPage = 1;
+  let slListFilter = {};
+  let labelRules = [];
+  let labelCases = [];
+  let labelVersions = [];
+  let currentRuleTagId = null;     // currently selected level-3 tag for rule editing
+  let currentRuleTab = 'basic';    // active tab in rule workspace
+  let currentRuleContentType = 'text'; // active sub-tab in rule settings
 
   // ── Helpers ────────────────────────────────────────────────────
   function generateId(prefix) {
@@ -279,6 +312,243 @@
     localStorage.setItem(STORAGE_BATCH_TASKS, JSON.stringify(batchTasks));
   }
 
+  function loadSampleLibrary() {
+    try { var raw = localStorage.getItem(STORAGE_SAMPLE_LIBRARY); if (raw) { sampleLibrary = JSON.parse(raw); return; } } catch (e) {}
+    sampleLibrary = [];
+  }
+  function saveSampleLibrary() { localStorage.setItem(STORAGE_SAMPLE_LIBRARY, JSON.stringify(sampleLibrary)); }
+
+  function loadSampleTags() {
+    try { var raw = localStorage.getItem(STORAGE_SAMPLE_TAGS); if (raw) { sampleTags = JSON.parse(raw); } else { sampleTags = []; } } catch (e) { sampleTags = []; }
+    var migrated = false;
+    sampleTags.forEach(function (t) {
+      // Legacy field migrations
+      if (!t.hitConditions) { t.hitConditions = []; migrated = true; }
+      if (!t.excludeConditions) { t.excludeConditions = []; migrated = true; }
+      if (typeof t.positiveExamples === 'string') { t.positiveExamples = t.positiveExamples.split('\n').filter(function (s) { return s.trim(); }); migrated = true; }
+      if (typeof t.negativeExamples === 'string') { t.negativeExamples = t.negativeExamples.split('\n').filter(function (s) { return s.trim(); }); migrated = true; }
+      // New field migrations
+      if (!t.code) { t.code = t.name; migrated = true; }
+      if (!t.path) { t.path = t.name; migrated = true; }
+      if (!t.applicableContentTypes) { t.applicableContentTypes = (t.applicableType === 'all' || !t.applicableType) ? ['text','image'] : [t.applicableType]; migrated = true; }
+      if (!t.suggestedStatus) { t.suggestedStatus = 'reject'; migrated = true; }
+      if (!t.riskLevel) { t.riskLevel = 'medium'; migrated = true; }
+      if (t.status === 'enabled') { t.status = 'active'; migrated = true; }
+      if (t.status === 'disabled') { t.status = 'disabled'; migrated = true; }
+      if (!t.ownerId) { t.ownerId = null; migrated = true; }
+    });
+    if (sampleTags.length === 0) {
+      var nowStr = now();
+      sampleTags = DEFAULT_SAMPLE_TAGS.map(function (t) { t.createdAt = nowStr; t.updatedAt = nowStr; return t; });
+    }
+    // Seed level-2/3 tags if none exist
+    var hasLvl2 = sampleTags.filter(function (t) { return t.level > 1; }).length > 0;
+    if (!hasLvl2) { seedLevel23Tags(now()); migrated = true; }
+    if (migrated) saveSampleTags();
+  }
+  function saveSampleTags() { localStorage.setItem(STORAGE_SAMPLE_TAGS, JSON.stringify(sampleTags)); }
+
+  // Seed level-2 and level-3 tags under level-1 categories
+  function seedLevel23Tags(nowStr) {
+    var seed = [
+      // 广告 sub-tags
+      { id: 'stag_4_1', name: '站外引流', code: 'AD_OFFSITE', level: 2, parentId: 'stag_4', path: '广告/站外引流', description: '引导用户至站外平台', applicableContentTypes: ['text','image'], suggestedStatus: 'reject', riskLevel: 'medium', status: 'active', ownerId: null, sortOrder: 1, createdAt: nowStr, updatedAt: nowStr },
+      { id: 'stag_4_1_1', name: '微信号引流', code: 'AD_OFFSITE_WECHAT', level: 3, parentId: 'stag_4_1', path: '广告/站外引流/微信号引流', description: '通过内容引导添加微信号、微信群等', applicableContentTypes: ['text','image'], suggestedStatus: 'reject', riskLevel: 'medium', status: 'active', ownerId: null, sortOrder: 1, createdAt: nowStr, updatedAt: nowStr },
+      { id: 'stag_4_1_2', name: 'QQ引流', code: 'AD_OFFSITE_QQ', level: 3, parentId: 'stag_4_1', path: '广告/站外引流/QQ引流', description: '引导添加QQ号、QQ群', applicableContentTypes: ['text','image'], suggestedStatus: 'reject', riskLevel: 'medium', status: 'active', ownerId: null, sortOrder: 2, createdAt: nowStr, updatedAt: nowStr },
+      { id: 'stag_4_2', name: '虚假宣传', code: 'AD_FALSE', level: 2, parentId: 'stag_4', path: '广告/虚假宣传', description: '夸大效果、虚假承诺等', applicableContentTypes: ['text'], suggestedStatus: 'reject', riskLevel: 'medium', status: 'active', ownerId: null, sortOrder: 2, createdAt: nowStr, updatedAt: nowStr },
+      { id: 'stag_4_2_1', name: '效果夸大', code: 'AD_FALSE_EXAGGERATE', level: 3, parentId: 'stag_4_2', path: '广告/虚假宣传/效果夸大', description: '对产品效果进行明显夸大宣传', applicableContentTypes: ['text'], suggestedStatus: 'reject', riskLevel: 'medium', status: 'active', ownerId: null, sortOrder: 1, createdAt: nowStr, updatedAt: nowStr },
+      // 色情 sub-tags
+      { id: 'stag_2_1', name: '低俗内容', code: 'PORN_VULGAR', level: 2, parentId: 'stag_2', path: '色情/低俗内容', description: '虽未达到色情标准但低俗不雅', applicableContentTypes: ['text','image'], suggestedStatus: 'reject', riskLevel: 'medium', status: 'active', ownerId: null, sortOrder: 1, createdAt: nowStr, updatedAt: nowStr },
+      { id: 'stag_2_1_1', name: '性暗示', code: 'PORN_VULGAR_SUGGEST', level: 3, parentId: 'stag_2_1', path: '色情/低俗内容/性暗示', description: '含性暗示、暧昧挑逗内容', applicableContentTypes: ['text','image'], suggestedStatus: 'reject', riskLevel: 'medium', status: 'active', ownerId: null, sortOrder: 1, createdAt: nowStr, updatedAt: nowStr },
+      // 谩骂 sub-tags
+      { id: 'stag_3_1', name: '人身攻击', code: 'ABUSE_PERSONAL', level: 2, parentId: 'stag_3', path: '谩骂/人身攻击', description: '直接针对个人的侮辱性言论', applicableContentTypes: ['text'], suggestedStatus: 'reject', riskLevel: 'high', status: 'active', ownerId: null, sortOrder: 1, createdAt: nowStr, updatedAt: nowStr },
+      { id: 'stag_3_1_1', name: '辱骂诅咒', code: 'ABUSE_PERSONAL_CURSE', level: 3, parentId: 'stag_3_1', path: '谩骂/人身攻击/辱骂诅咒', description: '直接辱骂、人身诅咒、人身侮辱', applicableContentTypes: ['text'], suggestedStatus: 'reject', riskLevel: 'high', status: 'active', ownerId: null, sortOrder: 1, createdAt: nowStr, updatedAt: nowStr },
+      // 暴恐 sub-tags
+      { id: 'stag_6_1', name: '暴力内容', code: 'VIOLENCE_CONTENT', level: 2, parentId: 'stag_6', path: '暴恐/暴力内容', description: '暴力场景、血腥画面等内容', applicableContentTypes: ['text','image'], suggestedStatus: 'reject', riskLevel: 'high', status: 'active', ownerId: null, sortOrder: 1, createdAt: nowStr, updatedAt: nowStr },
+      { id: 'stag_6_1_1', name: '血腥暴力', code: 'VIOLENCE_CONTENT_BLOODY', level: 3, parentId: 'stag_6_1', path: '暴恐/暴力内容/血腥暴力', description: '血腥、残忍、暴力伤害场景', applicableContentTypes: ['text','image'], suggestedStatus: 'reject', riskLevel: 'high', status: 'active', ownerId: null, sortOrder: 1, createdAt: nowStr, updatedAt: nowStr },
+    ];
+    seed.forEach(function (t) {
+      if (!sampleTags.filter(function (x) { return x.id === t.id; })[0]) {
+        sampleTags.push(t);
+      }
+    });
+    saveSampleTags();
+  }
+
+  // ── Label Rules ──────────────────────────────────────────────────
+  function loadLabelRules() {
+    try { var raw = localStorage.getItem(STORAGE_LABEL_RULES); if (raw) { labelRules = JSON.parse(raw); } else { labelRules = []; } } catch (e) { labelRules = []; }
+    if (labelRules.length === 0) { seedLabelRules(); }
+  }
+  function saveLabelRules() { localStorage.setItem(STORAGE_LABEL_RULES, JSON.stringify(labelRules)); }
+  function getLabelRule(labelId, contentType) {
+    return labelRules.filter(function (r) { return r.labelId === labelId && r.contentType === contentType; })[0] || null;
+  }
+  function seedLabelRules() {
+    var seedRules = [
+      { id: 'rule_1', labelId: 'stag_4_1_1', contentType: 'text', ruleSummary: '检测文本中是否包含微信号引流行为，包括微信号、微信二维码、加微信等引导话术', keywords: ['微信', 'vx', '加V', '威信', 'WeChat'], semanticFeatures: '诱导用户添加个人微信进行站外沟通或交易', hitConditions: [{id:'hc1',field:'content',operator:'contains',value:'微信'},{id:'hc2',field:'content',operator:'regex',value:'[vVwW]\s*[xX]'}], excludeConditions: [{id:'ec1',field:'content',operator:'contains',value:'微信公众号'}], disposalSuggestion: 'reject', applicableScenes: ['评论','私信','个人简介'], version: 1, status: 'active', createdBy: null, createdAt: now(), updatedAt: now() },
+      { id: 'rule_2', labelId: 'stag_4_1_2', contentType: 'text', ruleSummary: '检测文本中是否包含QQ引流行为', keywords: ['QQ', 'qq', '扣扣', '企鹅'], semanticFeatures: '诱导用户添加QQ号码或QQ群进行站外沟通', hitConditions: [{id:'hc3',field:'content',operator:'contains',value:'QQ'}], excludeConditions: [], disposalSuggestion: 'reject', applicableScenes: ['评论','私信'], version: 1, status: 'active', createdBy: null, createdAt: now(), updatedAt: now() },
+      { id: 'rule_3', labelId: 'stag_2_1_1', contentType: 'text', ruleSummary: '检测文本擦边内容', keywords: ['诱惑', '暧昧', '约吗'], semanticFeatures: '性暗示、暧昧挑逗的文本内容', hitConditions: [{id:'hc4',field:'content',operator:'contains',value:'暧昧'}], excludeConditions: [], disposalSuggestion: 'reject', applicableScenes: ['评论','私信','动态'], version: 1, status: 'active', createdBy: null, createdAt: now(), updatedAt: now() },
+      { id: 'rule_4', labelId: 'stag_3_1_1', contentType: 'text', ruleSummary: '检测辱骂诅咒类内容', keywords: ['傻逼', '脑残', '去死', 'nmsl'], semanticFeatures: '直接辱骂、诅咒、恶毒语言攻击', hitConditions: [{id:'hc5',field:'content',operator:'contains',value:'傻逼'}], excludeConditions: [{id:'ec2',field:'content',operator:'contains',value:'笑死'}], disposalSuggestion: 'reject', applicableScenes: ['评论'], version: 1, status: 'active', createdBy: null, createdAt: now(), updatedAt: now() },
+    ];
+    labelRules = seedRules;
+    saveLabelRules();
+  }
+
+  // ── Label Cases ──────────────────────────────────────────────────
+  function loadLabelCases() {
+    try { var raw = localStorage.getItem(STORAGE_LABEL_CASES); if (raw) { labelCases = JSON.parse(raw); } else { labelCases = []; } } catch (e) { labelCases = []; }
+    if (labelCases.length === 0) { seedLabelCases(); }
+  }
+  function saveLabelCases() { localStorage.setItem(STORAGE_LABEL_CASES, JSON.stringify(labelCases)); }
+  function getLabelCases(labelId, caseType) {
+    return labelCases.filter(function (c) { return c.labelId === labelId && (!caseType || c.caseType === caseType); });
+  }
+  function seedLabelCases() {
+    var nowStr = now();
+    labelCases = [
+      { id: 'case_1', labelId: 'stag_4_1_1', caseType: 'positive', contentType: 'text', textContent: '加我微信 xxx123456 了解更多优惠', imageUrl: '', ocrText: '', judgmentStatus: 'reject', judgmentReason: '明确引导添加微信号，属于站外引流', keyEvidence: '微信号 xxx123456', scene: '评论', correctLabelId: null, canUseForTraining: true, canUseForRag: true, reviewStatus: 'confirmed', createdBy: null, createdAt: nowStr, updatedAt: nowStr },
+      { id: 'case_2', labelId: 'stag_4_1_1', caseType: 'positive', contentType: 'text', textContent: 'VX: test888 详情私聊', imageUrl: '', ocrText: '', judgmentStatus: 'reject', judgmentReason: '使用VX缩写引导添加微信', keyEvidence: 'VX: test888', scene: '私信', correctLabelId: null, canUseForTraining: true, canUseForRag: true, reviewStatus: 'confirmed', createdBy: null, createdAt: nowStr, updatedAt: nowStr },
+      { id: 'case_3', labelId: 'stag_4_1_1', caseType: 'negative', contentType: 'text', textContent: '关注我们的微信公众号获取更多资讯', imageUrl: '', ocrText: '', judgmentStatus: 'pass', judgmentReason: '引导关注微信公众号属于平台内正常行为，不应判为站外引流', keyEvidence: '微信公众号是平台内功能', scene: '评论', correctLabelId: null, canUseForTraining: true, canUseForRag: true, reviewStatus: 'confirmed', createdBy: null, createdAt: nowStr, updatedAt: nowStr },
+      { id: 'case_4', labelId: 'stag_2_1_1', caseType: 'positive', contentType: 'text', textContent: '今晚有空吗，出来玩玩呀～各种姿势都可以哦', imageUrl: '', ocrText: '', judgmentStatus: 'reject', judgmentReason: '含明显性暗示和挑逗内容', keyEvidence: '各种姿势都可以', scene: '私信', correctLabelId: null, canUseForTraining: true, canUseForRag: true, reviewStatus: 'confirmed', createdBy: null, createdAt: nowStr, updatedAt: nowStr },
+      { id: 'case_5', labelId: 'stag_3_1_1', caseType: 'positive', contentType: 'text', textContent: '你就是个傻逼，赶紧去死吧', imageUrl: '', ocrText: '', judgmentStatus: 'reject', judgmentReason: '直接辱骂并诅咒他人', keyEvidence: '傻逼、去死', scene: '评论', correctLabelId: null, canUseForTraining: true, canUseForRag: true, reviewStatus: 'confirmed', createdBy: null, createdAt: nowStr, updatedAt: nowStr },
+    ];
+    saveLabelCases();
+  }
+
+  // ── Label Versions ───────────────────────────────────────────────
+  function loadLabelVersions() {
+    try { var raw = localStorage.getItem(STORAGE_LABEL_VERSIONS); if (raw) { labelVersions = JSON.parse(raw); } else { labelVersions = []; } } catch (e) { labelVersions = []; }
+  }
+  function saveLabelVersions() { localStorage.setItem(STORAGE_LABEL_VERSIONS, JSON.stringify(labelVersions)); }
+
+  function loadSampleDatasets() {
+    try { var raw = localStorage.getItem(STORAGE_SAMPLE_DATASETS); if (raw) { sampleDatasets = JSON.parse(raw); return; } } catch (e) {}
+    sampleDatasets = [];
+  }
+  function saveSampleDatasets() { localStorage.setItem(STORAGE_SAMPLE_DATASETS, JSON.stringify(sampleDatasets)); }
+
+  function loadSampleKnowledge() {
+    try { var raw = localStorage.getItem(STORAGE_SAMPLE_KNOWLEDGE); if (raw) { sampleKnowledge = JSON.parse(raw); return; } } catch (e) {}
+    sampleKnowledge = [];
+  }
+  function saveSampleKnowledge() { localStorage.setItem(STORAGE_SAMPLE_KNOWLEDGE, JSON.stringify(sampleKnowledge)); }
+
+  function getSampleById(id) { return sampleLibrary.filter(function (s) { return s.id === id; })[0]; }
+  function getSampleTagById(id) { return sampleTags.filter(function (t) { return t.id === id; })[0]; }
+  function isSampleTagEnabled(tag) { return !tag || tag.status !== 'disabled'; }
+  function getSampleChildTags(parentId) {
+    return sampleTags
+      .filter(function (t) { return t.parentId === parentId && isSampleTagEnabled(t); })
+      .sort(function (a, b) { return (a.sortOrder || 0) - (b.sortOrder || 0); });
+  }
+  function getSampleDescendantTagIds(tagId) {
+    var ids = [];
+    function walk(parentId) {
+      sampleTags.forEach(function (tag) {
+        if (tag.parentId === parentId) {
+          ids.push(tag.id);
+          walk(tag.id);
+        }
+      });
+    }
+    walk(tagId);
+    return ids;
+  }
+  function getSampleTagSampleCount(tagId) {
+    var relatedIds = [tagId].concat(getSampleDescendantTagIds(tagId));
+    return sampleLibrary.filter(function (sample) {
+      if (relatedIds.indexOf(sample.categoryId) !== -1) return true;
+      return (sample.tagIds || []).some(function (id) { return relatedIds.indexOf(id) !== -1; });
+    }).length;
+  }
+  function getSampleTagCaseCount(tagId) {
+    var relatedIds = [tagId].concat(getSampleDescendantTagIds(tagId));
+    return labelCases.filter(function (item) { return relatedIds.indexOf(item.labelId) !== -1; }).length;
+  }
+  function getSampleThirdLevelTagCount(tagId) {
+    var tag = getSampleTagById(tagId);
+    if (!tag || tag.level >= 3) return 0;
+    var relatedIds = getSampleDescendantTagIds(tagId);
+    return sampleTags.filter(function (item) {
+      return item.level === 3 && relatedIds.indexOf(item.id) !== -1 && isSampleTagEnabled(item);
+    }).length;
+  }
+  function updateSampleTagPath(tagId) {
+    var tag = getSampleTagById(tagId);
+    if (!tag) return;
+    var parent = tag.parentId ? getSampleTagById(tag.parentId) : null;
+    tag.level = parent ? parent.level + 1 : 1;
+    tag.path = parent ? (parent.path || parent.name) + '/' + tag.name : tag.name;
+    tag.updatedAt = now();
+    sampleTags.forEach(function (child) {
+      if (child.parentId === tag.id) updateSampleTagPath(child.id);
+    });
+  }
+  function getSampleSiblingTags(tag) {
+    return sampleTags
+      .filter(function (item) { return (item.parentId || null) === (tag.parentId || null) && item.level === tag.level; })
+      .sort(function (a, b) { return (a.sortOrder || 0) - (b.sortOrder || 0); });
+  }
+  function getSampleTagPath(tagId) {
+    var path = [];
+    var current = getSampleTagById(tagId);
+    while (current) { path.unshift(current.name); current = current.parentId ? getSampleTagById(current.parentId) : null; }
+    return path;
+  }
+
+  function initDemoSamples() {
+    var nowStr = now();
+    sampleLibrary = [
+      {
+        id: generateId('SAMP'),
+        content: '这个产品真的太好了，强烈推荐给大家，加我微信xxx了解更多优惠信息。',
+        contentType: 'text',
+        status: 'reject',
+        categoryId: 'stag_4',
+        tagIds: ['stag_4'],
+        source: '线上召回',
+        usage: [],
+        reviewReason: '包含微信号引流推广内容，属于广告违规',
+        confidence: 95,
+        auditHistory: [{ time: nowStr, action: '初始标注', detail: '状态: 不通过 | 分类: 广告', operator: '标注员A' }],
+        createdAt: nowStr,
+        updatedAt: nowStr
+      },
+      {
+        id: generateId('SAMP'),
+        content: '今天天气真好，适合出去走走，大家觉得呢？',
+        contentType: 'text',
+        status: 'pass',
+        categoryId: 'stag_9',
+        tagIds: ['stag_9'],
+        source: '线上召回',
+        usage: [],
+        reviewReason: '正常社交交流内容，无违规风险',
+        confidence: 98,
+        auditHistory: [{ time: nowStr, action: '初始标注', detail: '状态: 通过 | 分类: 其他', operator: '标注员B' }],
+        createdAt: nowStr,
+        updatedAt: nowStr
+      },
+      {
+        id: generateId('SAMP'),
+        content: '这个政策简直就是胡闹，某领导人完全不懂民生！',
+        contentType: 'text',
+        status: 'suspect',
+        categoryId: 'stag_1',
+        tagIds: ['stag_1'],
+        source: '用户反馈',
+        usage: [],
+        reviewReason: '有攻击政策倾向但需进一步确认是否达到违规标准',
+        confidence: 60,
+        auditHistory: [{ time: nowStr, action: '初始标注', detail: '状态: 嫌疑 | 分类: 涉政', operator: '标注员A' }],
+        createdAt: nowStr,
+        updatedAt: nowStr
+      }
+    ];
+    saveSampleLibrary();
+  }
+
   function getBatchTaskById(id) {
     return batchTasks.filter(function (t) { return t.task_id === id; })[0];
   }
@@ -373,10 +643,16 @@
     var isAnnoPage = annoModes.indexOf(menuName) !== -1;
     var isCommentPage = menuName === 'annotation-comment';
 
+    // Sample library sub-pages
+    var isSampleSubPage = menuName && menuName.indexOf('sample-') === 0 && menuName !== 'sample-library';
+
     // Edit/detail sub-pages: highlight the parent menu item
-    var isEditPage = menuName === 'model-config-edit' || menuName === 'prompt-config-edit' || menuName === 'batch-test-detail';
-    if (subTarget || isEditPage || isAnnoPage || isCommentPage) {
-      var parentMenu = (isAnnoPage || isCommentPage) ? 'annotation' : 'model';
+    var isEditPage = menuName === 'model-config-edit' || menuName === 'prompt-config-edit' || menuName === 'batch-test-detail' || menuName === 'sample-detail';
+    if (subTarget || isEditPage || isAnnoPage || isCommentPage || isSampleSubPage) {
+      var parentMenu;
+      if (isAnnoPage || isCommentPage) parentMenu = 'annotation';
+      else if (isSampleSubPage || menuName === 'sample-detail') parentMenu = 'sample-library';
+      else parentMenu = 'model';
       var parentItem = document.querySelector('.menu-parent[data-menu="' + parentMenu + '"]');
       if (parentItem) {
         parentItem.classList.add('active');
@@ -388,6 +664,7 @@
       if (menuName === 'model-config-edit') listName = 'model-config';
       else if (menuName === 'prompt-config-edit') listName = 'prompt-config';
       else if (menuName === 'batch-test-detail') listName = 'batch-test';
+      else if (menuName === 'sample-detail') listName = 'sample-list';
       if (isEditPage) {
         var listItem = document.querySelector('.menu-sub-item[data-menu="' + listName + '"]');
         if (listItem) listItem.classList.add('active');
@@ -449,13 +726,1816 @@
       var createPanel = document.getElementById('bt-panel-create');
       if (createPanel) createPanel.classList.add('active');
     }
+
+    // Sample library page rendering
+    if (menuName === 'sample-dashboard') { renderSampleTags(); }
+    if (menuName === 'sample-list') { slListPage = 1; slListFilter = {}; renderSampleList(); }
+    if (menuName === 'sample-tags') { switchMenu('sample-dashboard'); return; }
+    if (menuName === 'sample-datasets') renderSampleDatasets();
+    if (menuName === 'sample-knowledge') renderSampleKnowledge();
+    if (menuName === 'sample-detail') renderSampleDetail(currentSampleId);
   }
 
   function backToBatchList() {
     currentBatchTaskId = null;
     switchMenu('batch-test');
+    // 切换到任务列表子标签页
+    document.querySelectorAll('#btSubTabs .ct-tab').forEach(function (t) { t.classList.remove('active'); });
+    var listTab = document.querySelector('#btSubTabs .ct-tab[data-bt-tab="list"]');
+    if (listTab) listTab.classList.add('active');
+    document.querySelectorAll('.bt-panel').forEach(function (p) { p.classList.remove('active'); });
+    var listPanel = document.getElementById('bt-panel-list');
+    if (listPanel) listPanel.classList.add('active');
     renderBatchTaskList();
     renderBatchProgress();
+  }
+
+  // ══════════════════════════════════════════════════════════════════
+  // Content Sample Library — Rendering Functions
+  // ══════════════════════════════════════════════════════════════════
+
+  function slStatusBadge(status) {
+    var map = { pass: '通过', reject: '不通过', suspect: '嫌疑' };
+    var cls = { pass: 'badge-pass', reject: 'badge-reject', suspect: 'badge-suspect' };
+    return '<span class="badge ' + (cls[status] || '') + '">' + (map[status] || status) + '</span>';
+  }
+
+  function slDatasetTypeLabel(type) {
+    var map = { training: '训练集', test: '测试集', validation: '验证集', hard_case: '难例集', regression: '回归集', rag: 'RAG候选集' };
+    return map[type] || type;
+  }
+
+  function slSourceLabel(src) {
+    var map = { manual: '人工导入', online_recall: '线上召回', model_miss: '模型误判', user_feedback: '用户反馈', red_team: '红队构造' };
+    return map[src] || src;
+  }
+
+  function slKnowledgeStatusBadge(status) {
+    var map = { draft: '草稿', published: '已发布', archived: '已归档' };
+    var cls = { draft: 'badge-info', published: 'badge-pass', archived: 'badge-secondary' };
+    return '<span class="badge ' + (cls[status] || '') + '">' + (map[status] || status) + '</span>';
+  }
+
+  function renderSlPagination(containerId, page, totalPages, onPageChange) {
+    var container = document.getElementById(containerId);
+    if (!container || totalPages <= 1) { if (container) container.innerHTML = ''; return; }
+    var html = '';
+    html += '<button' + (page <= 1 ? ' disabled' : '') + ' data-page="' + (page - 1) + '">上一页</button>';
+    for (var i = 1; i <= totalPages; i++) {
+      html += '<button' + (i === page ? ' class="active"' : '') + ' data-page="' + i + '">' + i + '</button>';
+    }
+    html += '<button' + (page >= totalPages ? ' disabled' : '') + ' data-page="' + (page + 1) + '">下一页</button>';
+    html += '<span class="page-info">共 ' + totalPages + ' 页</span>';
+    container.innerHTML = html;
+    container.querySelectorAll('button[data-page]').forEach(function (btn) {
+      btn.addEventListener('click', function () { onPageChange(parseInt(this.dataset.page)); });
+    });
+  }
+
+  // ── Dashboard ────────────────────────────────────────────────────
+  // Sample List ──────────────────────────────────────────────────
+  function renderSampleList() {
+    // Populate filter category dropdown
+    var catSelect = document.getElementById('slFilterCategory');
+    catSelect.innerHTML = '<option value="">全部分类</option>';
+    var lvl1Tags = sampleTags.filter(function (t) { return t.level === 1 && isSampleTagEnabled(t); });
+    lvl1Tags.forEach(function (t) {
+      catSelect.innerHTML += '<option value="' + t.id + '">' + t.name + '</option>';
+    });
+    catSelect.value = slListFilter.categoryId || '';
+
+    // Apply filters
+    var filtered = sampleLibrary.slice();
+    if (slListFilter.search) {
+      var kw = slListFilter.search.toLowerCase();
+      filtered = filtered.filter(function (s) {
+        return (s.title && s.title.toLowerCase().indexOf(kw) !== -1) ||
+               (s.content && s.content.toLowerCase().indexOf(kw) !== -1) ||
+               (s.reviewReason && s.reviewReason.toLowerCase().indexOf(kw) !== -1);
+      });
+    }
+    if (slListFilter.contentType) filtered = filtered.filter(function (s) { return s.contentType === slListFilter.contentType; });
+    if (slListFilter.status) filtered = filtered.filter(function (s) { return s.status === slListFilter.status; });
+    if (slListFilter.categoryId) filtered = filtered.filter(function (s) { return s.categoryId === slListFilter.categoryId; });
+
+    // Sort by updatedAt descending
+    filtered.sort(function (a, b) { return (b.updatedAt || '').localeCompare(a.updatedAt || ''); });
+
+    var pageSize = 15;
+    var totalPages = Math.ceil(filtered.length / pageSize) || 1;
+    if (slListPage > totalPages) slListPage = totalPages;
+    var start = (slListPage - 1) * pageSize;
+    var pageItems = filtered.slice(start, start + pageSize);
+
+    var tbody = document.getElementById('slSampleTableBody');
+    if (pageItems.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="8" class="table-empty">暂无样本数据</td></tr>';
+    } else {
+      tbody.innerHTML = pageItems.map(function (s) {
+        var tag = getSampleTagById(s.categoryId);
+        var catName = tag ? tag.name : '-';
+        var preview = '';
+        if (s.contentType === 'text') {
+          preview = (s.title || s.content || '').substring(0, 50) + ((s.content || '').length > 50 ? '...' : '');
+        } else {
+          preview = '<img src="' + (s.imageUrl || '') + '" style="width:48px;height:48px;object-fit:cover;border-radius:4px;" onerror="this.style.display=\'none\'">';
+        }
+        return '<tr>' +
+          '<td><a class="link" data-action="sl-view" data-id="' + s.id + '" href="#">' + s.id + '</a></td>' +
+          '<td>' + preview + '</td>' +
+          '<td>' + contentTypeLabel(s.contentType) + '</td>' +
+          '<td>' + slStatusBadge(s.status) + '</td>' +
+          '<td>' + catName + '</td>' +
+          '<td>' + slSourceLabel(s.source) + '</td>' +
+          '<td>' + formatTime(s.updatedAt) + '</td>' +
+          '<td>' +
+            '<a class="link" data-action="sl-view" data-id="' + s.id + '" href="#">查看</a> ' +
+            '<a class="link" data-action="sl-edit" data-id="' + s.id + '" href="#">编辑</a>' +
+          '</td>' +
+        '</tr>';
+      }).join('');
+    }
+
+    document.getElementById('slSampleCount').textContent = '共 ' + filtered.length + ' 条';
+    renderSlPagination('slListPagination', slListPage, totalPages, function (p) {
+      slListPage = p;
+      renderSampleList();
+    });
+  }
+
+  // ── Sample Detail ────────────────────────────────────────────────
+  function renderSampleDetail(id) {
+    var sample = getSampleById(id);
+    if (!sample) { switchMenu('sample-list'); return; }
+    currentSampleId = id;
+
+    document.getElementById('slDetailPageTitle').textContent = '样本详情 - ' + id;
+    document.getElementById('slDetailId').value = id;
+    document.getElementById('slDetailType').value = sample.contentType || 'text';
+    document.getElementById('slDetailStatus').value = sample.status || 'pass';
+    document.getElementById('slDetailSource').value = sample.source || 'manual';
+    document.getElementById('slDetailReason').value = sample.reviewReason || '';
+    document.getElementById('btnSlDelete').style.display = 'inline-block';
+
+    // Content type toggle
+    var isText = sample.contentType === 'text';
+    document.getElementById('slDetailTextFields').style.display = isText ? '' : 'none';
+    document.getElementById('slDetailImageFields').style.display = isText ? 'none' : '';
+    document.getElementById('slDetailTitle').value = sample.title || '';
+    document.getElementById('slDetailText').value = isText ? (sample.content || '') : '';
+    document.getElementById('slDetailImgTitle').value = sample.title || '';
+    document.getElementById('slDetailImgUrl').value = sample.imageUrl || '';
+
+    // Populate category dropdown
+    var catSelect = document.getElementById('slDetailCategory');
+    catSelect.innerHTML = '';
+    sampleTags.filter(function (t) { return t.level === 1 && t.status === 'enabled'; }).forEach(function (t) {
+      catSelect.innerHTML += '<option value="' + t.id + '"' + (sample.categoryId === t.id ? ' selected' : '') + '>' + t.name + '</option>';
+    });
+
+    // Tag pills
+    renderSlTagPills(sample.tagIds || [], sample.categoryId);
+
+    // Content display (left side)
+    var contentHtml = '';
+    if (sample.contentType === 'text') {
+      contentHtml = '<div class="sl-content-text">' +
+        '<h4>标题</h4><p>' + (sample.title || '-') + '</p>' +
+        '<h4>文本内容</h4><pre>' + (sample.content || '') + '</pre>' +
+        '</div>';
+    } else {
+      contentHtml = '<div class="sl-content-image">' +
+        '<h4>标题</h4><p>' + (sample.title || '-') + '</p>' +
+        '<img src="' + (sample.imageUrl || '') + '" style="max-width:100%;max-height:400px;border-radius:6px;" onerror="this.alt=\'图片加载失败\'">' +
+        '</div>';
+    }
+    document.getElementById('slDetailContent').innerHTML = contentHtml;
+
+    // Audit history
+    var historyHtml = '<h4 style="margin-bottom:12px;">操作记录</h4>';
+    if (sample.auditHistory && sample.auditHistory.length) {
+      historyHtml += '<table class="table"><thead><tr><th>时间</th><th>操作</th><th>详情</th><th>操作人</th></tr></thead><tbody>';
+      sample.auditHistory.forEach(function (h) {
+        historyHtml += '<tr><td>' + formatTime(h.time) + '</td><td>' + h.action + '</td><td>' + h.detail + '</td><td>' + (h.operator || '-') + '</td></tr>';
+      });
+      historyHtml += '</tbody></table>';
+    } else {
+      historyHtml += '<p class="text-muted">暂无操作记录</p>';
+    }
+    document.getElementById('slDetailHistory').innerHTML = historyHtml;
+  }
+
+  function renderSlTagPills(tagIds, categoryId) {
+    var container = document.getElementById('slDetailTagPills');
+    if (!container) return;
+    // Show all enabled tags from the selected category, with checkboxes
+    var childTags = getSampleChildTags(categoryId);
+    if (childTags.length === 0) {
+      container.innerHTML = '<span class="form-hint">该分类暂无二级标签</span>';
+      return;
+    }
+    container.innerHTML = childTags.map(function (t) {
+      var checked = tagIds.indexOf(t.id) !== -1;
+      return '<label class="sl-tag-pill' + (checked ? ' checked' : '') + '">' +
+        '<input type="checkbox" value="' + t.id + '"' + (checked ? ' checked' : '') + ' data-sl-tag-checkbox>' +
+        '<span>' + t.name + '</span></label>';
+    }).join('');
+
+    // Also show grandchild tags for checked parent tags
+    tagIds.forEach(function (tid) {
+      var grandchildren = getSampleChildTags(tid);
+      if (grandchildren.length > 0) {
+        var subHtml = '<div class="sl-sub-tags" data-parent="' + tid + '">' +
+          grandchildren.map(function (st) {
+            var subChecked = tagIds.indexOf(st.id) !== -1;
+            return '<label class="sl-tag-pill sub' + (subChecked ? ' checked' : '') + '">' +
+              '<input type="checkbox" value="' + st.id + '"' + (subChecked ? ' checked' : '') + ' data-sl-tag-checkbox>' +
+              '<span>' + st.name + '</span></label>';
+          }).join('') + '</div>';
+        container.innerHTML += subHtml;
+      }
+    });
+  }
+
+  // ── Tag Management ───────────────────────────────────────────────
+  function renderSampleTagsLegacyUnused() {
+    var tree = document.getElementById('slTagTree');
+    var lvl1Tags = sampleTags.filter(function (t) { return t.level === 1; }).sort(function (a, b) { return (a.sortOrder || 0) - (b.sortOrder || 0); });
+
+    var searchInput = document.getElementById('slTagSearchInput');
+    var searchTerm = (searchInput && searchInput.value || '').toLowerCase();
+
+    function isTagVisible(t) {
+      if (!searchTerm) return true;
+      return (t.name || '').toLowerCase().indexOf(searchTerm) !== -1 ||
+             (t.code || '').toLowerCase().indexOf(searchTerm) !== -1;
+    }
+
+    var html = '<ul class="sl-tree">';
+    lvl1Tags.forEach(function (t1) {
+      var t1MatchesSearch = isTagVisible(t1);
+      var expanded = searchTerm ? t1MatchesSearch : slExpandedTagIds[t1.id];
+      if (searchTerm) {
+        var lvl2s = sampleTags.filter(function(t){return t.parentId === t1.id;});
+        var lvl3s = sampleTags.filter(function(t){return lvl2s.some(function(l2){return t.parentId === l2.id;});});
+        if (lvl2s.some(isTagVisible) || lvl3s.some(isTagVisible)) expanded = true;
+      }
+      if (!searchTerm && !t1MatchesSearch) {
+        var desc = sampleTags.filter(function(t){return (t.path||'').indexOf(t1.name+'/')===0;});
+        if (!desc.some(isTagVisible) && !t1MatchesSearch) return;
+      }
+
+      var lvl1SampleCount = sampleLibrary.filter(function (s) { return s.categoryId === t1.id; }).length;
+      html += '<li class="sl-tree-item">';
+      html += '<div class="sl-tree-row sl-tree-row--parent" data-tag-id="' + t1.id + '">';
+      html += '<span class="sl-tree-toggle" data-tag-id="' + t1.id + '">' + (expanded ? '▾' : '▸') + '</span>';
+      html += '<span class="sl-tree-name">' + escHtml(t1.name) + '</span>';
+      if (lvl1SampleCount > 0) html += '<span class="sl-tree-count">' + lvl1SampleCount + ' 条</span>';
+      html += '</div>';
+
+      // Level 2 children
+      if (expanded) {
+        var lvl2Tags = sampleTags.filter(function(t){return t.parentId === t1.id;}).sort(function(a,b){return (a.sortOrder||0)-(b.sortOrder||0);});
+        if (lvl2Tags.length > 0) {
+          html += '<ul class="sl-tree sl-tree-sub">';
+          lvl2Tags.forEach(function (t2) {
+            if (searchTerm && !isTagVisible(t2)) {
+              var lvl3s = sampleTags.filter(function(t){return t.parentId === t2.id;});
+              if (!lvl3s.some(isTagVisible)) return;
+            }
+            var exp2 = searchTerm ? true : slExpandedTagIds[t2.id];
+            html += '<li class="sl-tree-item">';
+            html += '<div class="sl-tree-row sl-tree-row--parent" data-tag-id="' + t2.id + '">';
+            html += '<span class="sl-tree-toggle" data-tag-id="' + t2.id + '">' + (exp2 ? '▾' : '▸') + '</span>';
+            html += '<span class="sl-tree-name">' + escHtml(t2.name) + '</span>';
+            html += '</div>';
+
+            // Level 3 children
+            if (exp2) {
+              var lvl3Tags = sampleTags.filter(function(t){return t.parentId === t2.id;}).sort(function(a,b){return (a.sortOrder||0)-(b.sortOrder||0);});
+              if (lvl3Tags.length > 0) {
+                html += '<ul class="sl-tree sl-tree-sub">';
+                lvl3Tags.forEach(function (t3) {
+                  if (searchTerm && !isTagVisible(t3)) return;
+                  var caseCount = labelCases.filter(function(c){return c.labelId===t3.id;}).length;
+                  html += '<li class="sl-tree-item">';
+                  html += '<div class="sl-tree-row sl-tree-row--level3" data-tag-id="' + t3.id + '">';
+                  html += '<span class="sl-tree-leaf"></span>';
+                  html += '<span class="sl-tree-name">' + escHtml(t3.name) + '</span>';
+                  if (caseCount > 0) html += '<span class="sl-tree-count">' + caseCount + ' 案例</span>';
+                  html += '</div></li>';
+                });
+                html += '</ul>';
+              }
+            }
+            html += '</li>';
+          });
+          html += '</ul>';
+        }
+      }
+      html += '</li>';
+    });
+    html += '</ul>';
+    tree.innerHTML = html;
+
+    // Highlight active tag row
+    if (currentRuleTagId) {
+      var activeRow = tree.querySelector('.sl-tree-row[data-tag-id="' + currentRuleTagId + '"]');
+      if (activeRow) activeRow.classList.add('sl-tree-row--active');
+    }
+
+    // Click handler for tree nodes (view detail)
+    tree.querySelectorAll('.sl-tree-row').forEach(function (row) {
+      row.addEventListener('click', function (e) {
+        if (e.target.closest('button') || e.target.closest('.sl-tree-toggle')) return;
+        showTagDetail(row.dataset.tagId);
+      });
+    });
+  }
+
+  function showTagDetailLegacyUnused(tagId) {
+    var tag = getSampleTagById(tagId);
+    if (!tag) return;
+    if (tag.level < 3) {
+      // For level-1 and level-2, just toggle expand (handled by tree click)
+      return;
+    }
+    currentRuleTagId = tagId;
+    currentRuleTab = 'basic';
+    renderTagRulePanel(tagId);
+  }
+
+  function renderSampleTags() {
+    var tree = document.getElementById('slTagTree');
+    if (!tree) return;
+    var searchInput = document.getElementById('slTagSearchInput');
+    var searchTerm = (searchInput && searchInput.value || '').toLowerCase();
+    var lvl1Tags = sampleTags
+      .filter(function (tag) { return tag.level === 1; })
+      .sort(function (a, b) { return (a.sortOrder || 0) - (b.sortOrder || 0); });
+
+    function isTagVisible(tag) {
+      if (!searchTerm) return true;
+      return (tag.name || '').toLowerCase().indexOf(searchTerm) !== -1 ||
+        (tag.code || '').toLowerCase().indexOf(searchTerm) !== -1;
+    }
+
+    function hasVisibleDescendant(tagId) {
+      return sampleTags.some(function (tag) {
+        return tag.parentId === tagId && (isTagVisible(tag) || hasVisibleDescendant(tag.id));
+      });
+    }
+
+    function renderTagRow(tag) {
+      var children = getSampleChildTags(tag.id);
+      var hasChildren = children.length > 0;
+      var expanded = searchTerm ? true : !!slExpandedTagIds[tag.id];
+      var tagCount = getSampleThirdLevelTagCount(tag.id);
+      var cls = 'sl-tree-row sl-tree-row--level' + tag.level + (hasChildren ? ' sl-tree-row--parent' : ' sl-tree-row--leaf');
+      var html = '<li class="sl-tree-item">';
+      html += '<div class="' + cls + '" data-tag-id="' + tag.id + '">';
+      if (hasChildren) {
+        html += '<button type="button" class="sl-tree-toggle" data-tag-id="' + tag.id + '" title="展开/收起">' + (expanded ? '▾' : '▸') + '</button>';
+      } else {
+        html += '<span class="sl-tree-leaf"></span>';
+      }
+      html += '<span class="sl-tree-name">' + escHtml(tag.name) + '</span>';
+      if (tag.level < 3) html += '<span class="sl-tree-count" title="level-3 tag count">' + tagCount + '</span>';
+      html += '<span class="sl-tree-actions">';
+      html += '<button type="button" class="sl-tree-menu-btn" data-sl-tag-menu="' + tag.id + '" title="tag actions">...</button>';
+      html += '</span></div>';
+
+      if (hasChildren && expanded) {
+        html += '<ul class="sl-tree sl-tree-sub">';
+        children.forEach(function (child) {
+          if (searchTerm && !isTagVisible(child) && !hasVisibleDescendant(child.id)) return;
+          html += renderTagRow(child);
+        });
+        html += '</ul>';
+      }
+      html += '</li>';
+      return html;
+    }
+
+    var html = '<ul class="sl-tree">';
+    lvl1Tags.forEach(function (tag) {
+      if (searchTerm && !isTagVisible(tag) && !hasVisibleDescendant(tag.id)) return;
+      html += renderTagRow(tag);
+    });
+    html += '</ul>';
+    tree.innerHTML = html;
+
+    if (currentRuleTagId) {
+      var activeRow = tree.querySelector('.sl-tree-row[data-tag-id="' + currentRuleTagId + '"]');
+      if (activeRow) activeRow.classList.add('sl-tree-row--active');
+    }
+  }
+
+  function showTagDetail(tagId) {
+    var tag = getSampleTagById(tagId);
+    if (!tag) return;
+    currentRuleTagId = tagId;
+    var tree = document.getElementById('slTagTree');
+    if (tree) {
+      tree.querySelectorAll('.sl-tree-row--active').forEach(function (row) { row.classList.remove('sl-tree-row--active'); });
+      var activeRow = tree.querySelector('.sl-tree-row[data-tag-id="' + tagId + '"]');
+      if (activeRow) activeRow.classList.add('sl-tree-row--active');
+    }
+    if (tag.level < 3) {
+      renderTagSummaryPanel(tagId);
+      return;
+    }
+    currentRuleTab = 'basic';
+    renderTagRulePanel(tagId);
+  }
+
+  function renderTagSummaryPanel(tagId) {
+    var tag = getSampleTagById(tagId);
+    var panel = document.getElementById('slTagEditPanel');
+    if (!tag || !panel) return;
+    var children = getSampleChildTags(tag.id);
+    var sampleCount = getSampleTagSampleCount(tag.id);
+    var caseCount = getSampleTagCaseCount(tag.id);
+    var html = '<div class="sl-rule-toolbar">';
+    html += '<div class="sl-rule-breadcrumb">' + renderRuleBreadcrumb(tag) + '</div>';
+    html += '<div class="sl-rule-toolbar-actions">';
+    html += '<button class="btn btn-secondary btn-sm" data-sl-panel-actions="' + tag.id + '">&#26631;&#31614;&#25805;&#20316;</button>';
+    html += '</div></div>';
+    html += '<div class="sl-tag-summary-grid">';
+    html += '<div class="sl-tag-summary-card"><b>' + sampleCount + '</b><span>关联样本</span></div>';
+    html += '<div class="sl-tag-summary-card"><b>' + children.length + '</b><span>直接子标签</span></div>';
+    html += '<div class="sl-tag-summary-card"><b>' + caseCount + '</b><span>案例数</span></div>';
+    html += '</div>';
+    html += '<div class="sl-tag-info">';
+    html += '<p><b>标签层级</b> ' + tag.level + ' 级</p>';
+    html += '<p><b>标签路径</b> ' + escHtml(tag.path || tag.name) + '</p>';
+    html += '<p><b>&#26631;&#31614;&#20540;</b> ' + escHtml(tag.code || tag.id || '-') + '</p>';
+    html += '<p><b>标签说明</b> ' + escHtml(tag.description || '暂无说明') + '</p>';
+    html += '</div>';
+    panel.innerHTML = html;
+  }
+
+  function renderTagRulePanel(tagId) {
+    var tag = getSampleTagById(tagId);
+    var panel = document.getElementById('slTagEditPanel');
+    if (!panel) return;
+    if (!tag || tag.level < 3) {
+      panel.innerHTML = '<h3 class="sl-tag-edit-title">&#36873;&#25321;&#19977;&#32423;&#26631;&#31614;</h3><p class="form-hint">&#28857;&#20987;&#24038;&#20391;&#19977;&#32423;&#26631;&#31614;&#26597;&#30475;&#21644;&#32534;&#36753;&#35268;&#21017;</p>';
+      return;
+    }
+    currentRuleTagId = tagId;
+
+    var html = '';
+    html += '<div class="sl-rule-toolbar">';
+    html += '<div class="sl-rule-breadcrumb">' + renderRuleBreadcrumb(tag) + '</div>';
+    html += '<div class="sl-rule-toolbar-actions">';
+    html += '<button class="btn btn-success btn-sm" id="btnRulePublish">&#20445;&#23384;&#24182;&#21457;&#24067;</button>';
+    html += '</div></div>';
+    html += renderUnifiedRuleEditor(tag);
+    panel.innerHTML = html;
+  }
+
+  function renderRuleBreadcrumb(tag) {
+    var parts = (tag.path || tag.name).split('/');
+    return parts.map(function(p, i) {
+      return '<span class="sl-breadcrumb-seg' + (i === parts.length - 1 ? ' sl-breadcrumb-seg--last' : '') + '">' + escHtml(p) + '</span>';
+    }).join('<span class="sl-breadcrumb-arrow">&gt;</span>');
+  }
+
+  function switchRuleTab(tabName) {
+    currentRuleTab = tabName;
+    if (currentRuleTagId) renderTagRulePanel(currentRuleTagId);
+  }
+
+  // ════════════════════════════════════════════════════════════════
+  // Tab 1: Basic Info
+  // ════════════════════════════════════════════════════════════════
+  function renderBasicInfoTab(tag) {
+    var parent = tag.parentId ? getSampleTagById(tag.parentId) : null;
+    var grandParent = parent && parent.parentId ? getSampleTagById(parent.parentId) : null;
+    var lvl1Tags = sampleTags.filter(function(t){return t.level===1;});
+    var lvl2Options = [];
+    if (grandParent) {
+      lvl2Options = sampleTags.filter(function(t){return t.level===2 && t.parentId===grandParent.id;});
+    }
+
+    var html = '<div class="sl-basic-form">';
+    // Name + Code
+    html += '<div class="form-row"><div class="form-group">';
+    html += '<label class="form-label">三级标签名称 <span class="required">*</span></label>';
+    html += '<input type="text" id="slBasicName" class="form-input" value="' + escHtml(tag.name) + '" maxlength="50">';
+    html += '</div><div class="form-group">';
+    html += '<label class="form-label">标签编码 <span class="required">*</span></label>';
+    html += '<input type="text" id="slBasicCode" class="form-input" value="' + escHtml(tag.code || '') + '" maxlength="50">';
+    html += '</div></div>';
+
+    // Category (level-1 + level-2)
+    html += '<div class="form-row"><div class="form-group">';
+    html += '<label class="form-label">所属一级分类 <span class="required">*</span></label>';
+    html += '<select id="slBasicCat1" class="form-select">';
+    lvl1Tags.forEach(function(t){ html += '<option value="'+t.id+'"'+(grandParent&&grandParent.id===t.id?' selected':'')+'>'+t.name+'</option>'; });
+    html += '</select></div><div class="form-group">';
+    html += '<label class="form-label">所属二级标签 <span class="required">*</span></label>';
+    html += '<select id="slBasicCat2" class="form-select">';
+    html += '<option value="">请先选择一级分类</option>';
+    (grandParent ? sampleTags.filter(function(t){return t.level===2&&t.parentId===grandParent.id;}) : []).forEach(function(t){
+      html += '<option value="'+t.id+'"'+(parent&&parent.id===t.id?' selected':'')+'>'+t.name+'</option>';
+    });
+    html += '</select></div></div>';
+
+    // Content type
+    html += '<div class="form-group"><label class="form-label">适用内容类型 <span class="required">*</span></label>';
+    html += '<div class="checkbox-group">';
+    html += '<label class="checkbox-label"><input type="checkbox" id="slBasicCtText" value="text"' + (tag.applicableContentTypes.indexOf('text')!==-1?' checked':'') + '> 文本</label>';
+    html += '<label class="checkbox-label"><input type="checkbox" id="slBasicCtImage" value="image"' + (tag.applicableContentTypes.indexOf('image')!==-1?' checked':'') + '> 图片</label>';
+    html += '</div></div>';
+
+    // Suggested status + risk level
+    html += '<div class="form-row"><div class="form-group">';
+    html += '<label class="form-label">建议审核状态 <span class="required">*</span></label>';
+    html += '<div class="checkbox-group">';
+    ['reject','suspect','pass'].forEach(function(v){
+      var labels = {reject:'不通过',suspect:'嫌疑',pass:'通过'};
+      html += '<label class="checkbox-label"><input type="radio" name="slBasicSuggStatus" value="'+v+'"'+(tag.suggestedStatus===v?' checked':'')+'> '+labels[v]+'</label>';
+    });
+    html += '</div></div><div class="form-group">';
+    html += '<label class="form-label">风险等级 <span class="required">*</span></label>';
+    html += '<div class="checkbox-group">';
+    ['high','medium','low'].forEach(function(v){
+      var labels = {high:'高',medium:'中',low:'低'};
+      html += '<label class="checkbox-label"><input type="radio" name="slBasicRiskLevel" value="'+v+'"'+(tag.riskLevel===v?' checked':'')+'> '+labels[v]+'</label>';
+    });
+    html += '</div></div></div>';
+
+    // Description
+    html += '<div class="form-group">';
+    html += '<label class="form-label">标签说明 <span class="required">*</span></label>';
+    html += '<textarea id="slBasicDesc" class="form-textarea" rows="3" style="min-height:72px;">' + escHtml(tag.description || '') + '</textarea>';
+    html += '</div>';
+
+    // Status display + owner
+    html += '<div class="form-row"><div class="form-group">';
+    html += '<label class="form-label">状态</label>';
+    var statusLabels = {draft:'草稿',active:'生效中',disabled:'已停用'};
+    html += '<p style="padding-top:8px;"><span class="badge '+(tag.status==='active'?'badge-pass':tag.status==='disabled'?'badge-secondary':'badge-suspect')+'">'+(statusLabels[tag.status]||tag.status)+'</span></p>';
+    html += '</div><div class="form-group">';
+    html += '<label class="form-label" for="slBasicOwner">负责人</label>';
+    html += '<input type="text" id="slBasicOwner" class="form-input" value="' + escHtml(tag.ownerId || '') + '" placeholder="选填">';
+    html += '</div></div>';
+
+    html += '</div>';
+    return html;
+  }
+
+  // ════════════════════════════════════════════════════════════════
+  // Tab 2: Rule Settings
+  // ════════════════════════════════════════════════════════════════
+  function renderRuleSettingsTab(tag) {
+    var contentTypes = tag.applicableContentTypes || ['text'];
+    var html = '';
+    // Sub-tabs for text/image
+    if (contentTypes.length > 1) {
+      html += '<div class="ct-tabs" style="margin-bottom:14px;">';
+      contentTypes.forEach(function(ct){
+        html += '<button class="ct-tab'+(currentRuleContentType===ct?' active':'')+'" data-rule-ct="'+ct+'">'+(ct==='text'?'文本规则':'图片规则')+'</button>';
+      });
+      html += '</div>';
+    }
+    var ct = (contentTypes.length === 1) ? contentTypes[0] : currentRuleContentType;
+    var rule = getLabelRule(tag.id, ct) || { ruleSummary:'', keywords:[], semanticFeatures:'', visualFeatures:'', ocrFeatures:[], hitConditions:[], excludeConditions:[], disposalSuggestion:'reject', applicableScenes:[] };
+
+    html += '<div class="sl-rule-form">';
+    html += '<div class="form-group"><label class="form-label">规则摘要 <span class="required">*</span></label>';
+    html += '<textarea id="slRuleSummary" class="form-textarea" rows="3" style="min-height:64px;">' + escHtml(rule.ruleSummary || '') + '</textarea></div>';
+
+    if (ct === 'text') {
+      html += '<div class="form-group"><label class="form-label">关键词</label>';
+      html += '<div class="sl-tag-input-wrap"><div class="sl-tag-input-tags" id="slRuleKeywords">';
+      (rule.keywords || []).forEach(function(kw){ html += '<span class="sl-tag-chip">' + escHtml(kw) + '<span class="sl-tag-chip-x">×</span></span>'; });
+      html += '</div>';
+      html += '<input type="text" class="form-input" id="slRuleKeywordInput" placeholder="输入关键词，回车添加" style="font-size:12px;"></div></div>';
+      html += '<div class="form-group"><label class="form-label">语义特征 <span class="required">*</span></label>';
+      html += '<textarea id="slRuleSemantic" class="form-textarea" rows="2" style="min-height:52px;">' + escHtml(rule.semanticFeatures || '') + '</textarea></div>';
+    } else {
+      html += '<div class="form-group"><label class="form-label">视觉特征 <span class="required">*</span></label>';
+      html += '<textarea id="slRuleVisual" class="form-textarea" rows="2" style="min-height:52px;">' + escHtml(rule.visualFeatures || '') + '</textarea></div>';
+      html += '<div class="form-group"><label class="form-label">OCR 特征</label>';
+      html += '<div class="sl-tag-input-wrap"><div class="sl-tag-input-tags" id="slRuleOcrFeatures">';
+      (rule.ocrFeatures || []).forEach(function(f){ html += '<span class="sl-tag-chip">' + escHtml(f) + '<span class="sl-tag-chip-x">×</span></span>'; });
+      html += '</div>';
+      html += '<input type="text" class="form-input" id="slRuleOcrInput" placeholder="输入OCR关键词，回车添加" style="font-size:12px;"></div></div>';
+    }
+
+    // Hit conditions
+    html += '<div class="sl-rule-section"><div class="sl-rule-section-title">命中条件 <span class="sl-rule-count">'+(rule.hitConditions||[]).length+'</span></div>';
+    html += '<div class="sl-condition-list" id="slHitCondList">';
+    (rule.hitConditions||[]).forEach(function(c,i){ html += renderConditionRow('hit', tag.id, c, i, ct); });
+    html += '</div>';
+    html += '<button class="sl-add-btn" id="btnAddHitCond">+ 添加命中条件</button></div>';
+
+    // Exclude conditions
+    html += '<div class="sl-rule-section"><div class="sl-rule-section-title">排除条件 <span class="sl-rule-count">'+(rule.excludeConditions||[]).length+'</span></div>';
+    html += '<div class="sl-condition-list" id="slExcCondList">';
+    (rule.excludeConditions||[]).forEach(function(c,i){ html += renderConditionRow('exc', tag.id, c, i, ct); });
+    html += '</div>';
+    html += '<button class="sl-add-btn" id="btnAddExcCond">+ 添加排除条件</button></div>';
+
+    // Disposal suggestion + scenes
+    html += '<div class="form-row"><div class="form-group">';
+    html += '<label class="form-label">处置建议 <span class="required">*</span></label>';
+    html += '<select id="slRuleDisposal" class="form-select">';
+    [{v:'reject',l:'不通过'},{v:'pass',l:'通过'},{v:'manual_review',l:'人工复核'}].forEach(function(o){
+      html += '<option value="'+o.v+'"'+(rule.disposalSuggestion===o.v?' selected':'')+'>'+o.l+'</option>';
+    });
+    html += '</select></div><div class="form-group">';
+    html += '<label class="form-label" for="slRuleScenes">适用场景</label>';
+    html += '<input type="text" id="slRuleScenes" class="form-input" value="' + escHtml((rule.applicableScenes||[]).join(',')) + '" placeholder="评论,私信,动态（逗号分隔）">';
+    html += '</div></div>';
+
+    html += '<input type="hidden" id="slRuleContentType" value="'+ct+'">';
+    html += '</div>';
+    return html;
+  }
+
+  function renderConditionRow(type, tagId, c, idx, contentType) {
+    var ct = contentType || currentRuleContentType || 'text';
+    var fields = { content: '内容', title: '标题' };
+    var ops = { contains: '包含', regex: '正则', equals: '等于' };
+    var html = '<div class="sl-condition-row">';
+    html += '<select class="form-select sl-cond-field" data-idx="'+idx+'" data-prop="field">';
+    Object.keys(fields).forEach(function(k){ html += '<option value="'+k+'"'+(c.field===k?' selected':'')+'>'+fields[k]+'</option>'; });
+    html += '</select>';
+    html += '<select class="form-select sl-cond-op" data-idx="'+idx+'" data-prop="operator">';
+    Object.keys(ops).forEach(function(k){ html += '<option value="'+k+'"'+(c.operator===k?' selected':'')+'>'+ops[k]+'</option>'; });
+    html += '</select>';
+    html += '<input type="text" class="form-input sl-cond-value" data-idx="'+idx+'" data-prop="value" value="'+escHtml(c.value||'')+'" placeholder="匹配值">';
+    html += '<button class="sl-cond-remove" data-action="remove-'+type+'-cond" data-idx="'+idx+'">×</button>';
+    html += '</div>';
+    return html;
+  }
+
+  // ════════════════════════════════════════════════════════════════
+  // Tab 3/4: Cases (positive/negative)
+  // ════════════════════════════════════════════════════════════════
+  function renderCasesTab(tag, caseType) {
+    var cases = getLabelCases(tag.id, caseType);
+    var titleLabel = caseType === 'positive' ? '正例' : '反例';
+    var html = '<div class="sl-case-tab">';
+    html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">';
+    html += '<span style="font-size:13px;color:var(--text-muted);">共 ' + cases.length + ' 条' + titleLabel + '</span>';
+    html += '<button class="btn btn-primary btn-sm" id="btnAddCase" data-case-type="'+caseType+'">新增' + titleLabel + '</button>';
+    html += '</div>';
+
+    if (cases.length === 0) {
+      html += '<div class="sl-case-empty">暂无' + titleLabel + '案例，点击"新增' + titleLabel + '"添加</div>';
+    } else {
+      html += '<div class="sl-case-list">';
+      cases.forEach(function(c) {
+        var reviewBadge = {pending:'badge-suspect',confirmed:'badge-pass',discarded:'badge-secondary'};
+        var reviewLabel = {pending:'待审核',confirmed:'已确认',discarded:'已废弃'};
+        html += '<div class="sl-case-item" data-case-id="'+c.id+'">';
+        html += '<div class="sl-case-item-head">';
+        html += '<span class="badge '+(c.contentType==='text'?'badge-info':'badge-pass')+'">'+(c.contentType==='text'?'文本':'图片')+'</span>';
+        html += '<span class="badge '+reviewBadge[c.reviewStatus]+'">'+reviewLabel[c.reviewStatus]+'</span>';
+        html += '<span style="font-size:12px;color:var(--text-muted);">判定: '+(c.judgmentStatus==='reject'?'不通过':c.judgmentStatus==='pass'?'通过':'嫌疑')+'</span>';
+        html += '<span style="flex:1;"></span>';
+        html += '<button class="btn-link btn-sm" data-action="edit-case" data-id="'+c.id+'">编辑</button>';
+        html += '<button class="btn-link btn-sm" data-action="delete-case" data-id="'+c.id+'" style="color:var(--danger);">删除</button>';
+        html += '</div>';
+        html += '<div class="sl-case-item-body">' + escHtml((c.textContent || c.imageUrl || '').substring(0, 120)) + '</div>';
+        if (c.judgmentReason) html += '<div class="sl-case-item-reason">理由: ' + escHtml(c.judgmentReason.substring(0, 80)) + '</div>';
+        html += '</div>';
+      });
+      html += '</div>';
+    }
+    html += '</div>';
+    return html;
+  }
+
+  // ════════════════════════════════════════════════════════════════
+  // Tab 5: Related Samples
+  // ════════════════════════════════════════════════════════════════
+  function renderRelatedSamplesTab(tag) {
+    var samples = sampleLibrary.filter(function(s){return s.tagIds && s.tagIds.indexOf(tag.id)!==-1;});
+    var html = '<div class="sl-samples-tab">';
+    html += '<span style="font-size:13px;color:var(--text-muted);">共 ' + samples.length + ' 条关联样本</span>';
+    if (samples.length === 0) {
+      html += '<p class="form-hint" style="padding:20px 0;">暂无样本关联此标签</p>';
+    } else {
+      html += '<div class="table-wrap" style="margin-top:12px;"><table class="table"><thead><tr>';
+      html += '<th>样本ID</th><th>内容预览</th><th>类型</th><th>审核状态</th><th>来源</th><th>更新时间</th><th>操作</th></tr></thead><tbody>';
+      samples.forEach(function(s){
+        var tagName = getSampleTagById(s.categoryId);
+        html += '<tr>';
+        html += '<td><code>'+s.id+'</code></td>';
+        html += '<td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+escHtml((s.content||s.title||'').substring(0,40))+'</td>';
+        html += '<td>'+contentTypeLabel(s.contentType)+'</td>';
+        html += '<td>'+slStatusBadge(s.status)+'</td>';
+        html += '<td>'+slSourceLabel(s.source)+'</td>';
+        html += '<td>'+formatTime(s.updatedAt)+'</td>';
+        html += '<td>';
+        html += '<a class="link" data-action="sl-view" data-id="'+s.id+'" href="#">查看</a> ';
+        html += '<a class="link" data-action="sl-sample-to-case" data-sample-id="'+s.id+'" data-tag-id="'+tag.id+'" href="#">设为案例</a>';
+        html += '</td></tr>';
+      });
+      html += '</tbody></table></div>';
+    }
+    html += '</div>';
+    return html;
+  }
+
+  // ════════════════════════════════════════════════════════════════
+  // Tab 6: Version History
+  // ════════════════════════════════════════════════════════════════
+  function renderVersionsTab(tag) {
+    var versions = labelVersions.filter(function(v){return v.labelId===tag.id;}).sort(function(a,b){return (b.version||'').localeCompare(a.version||'');});
+    var html = '<div class="sl-versions-tab">';
+    html += '<span style="font-size:13px;color:var(--text-muted);">共 ' + versions.length + ' 条版本记录</span>';
+    if (versions.length === 0) {
+      html += '<p class="form-hint" style="padding:20px 0;">暂无版本记录，发布规则后将自动生成版本</p>';
+    } else {
+      html += '<div class="table-wrap" style="margin-top:12px;"><table class="table"><thead><tr>';
+      html += '<th>版本号</th><th>变更类型</th><th>变更内容</th><th>影响范围</th><th>操作时间</th><th>生效状态</th></tr></thead><tbody>';
+      versions.forEach(function(v){
+        var changeLabels = {initial:'初始版本',basic_info:'基础信息',text_rule:'文本规则',image_rule:'图片规则',cases:'案例',status:'状态变更'};
+        var statusBadge = v.status==='active'?'badge-pass':'badge-secondary';
+        html += '<tr>';
+        html += '<td><strong>v'+v.version+'</strong></td>';
+        html += '<td>'+(changeLabels[v.changeType]||v.changeType)+'</td>';
+        html += '<td>'+escHtml((v.changeSummary||'').substring(0,40))+'</td>';
+        html += '<td>'+escHtml((v.impactScope||[]).join('、')||'-')+'</td>';
+        html += '<td>'+formatTime(v.createdAt)+'</td>';
+        html += '<td><span class="badge '+statusBadge+'">'+(v.status==='active'?'生效中':'已归档')+'</span></td>';
+        html += '</tr>';
+      });
+      html += '</tbody></table></div>';
+    }
+    html += '</div>';
+    return html;
+  }
+
+  // ════════════════════════════════════════════════════════════════
+  // Rule Actions
+  // ════════════════════════════════════════════════════════════════
+
+  function renderUnifiedRuleEditor(tag) {
+    var html = '<div class="sl-unified-rule-editor">';
+    html += '<section class="sl-unified-section">';
+    html += '<h4 class="sl-unified-title">&#22522;&#30784;&#20449;&#24687;</h4>';
+    html += '<div class="form-row"><div class="form-group">';
+    html += '<label class="form-label" for="slBasicCode">&#26631;&#31614;&#32534;&#30721; <span class="required">*</span></label>';
+    html += '<input type="text" id="slBasicCode" class="form-input" value="' + escHtml(tag.code || '') + '" maxlength="50">';
+    html += '</div></div>';
+    html += '<div class="form-group">';
+    html += '<label class="form-label" for="slBasicDesc">&#26631;&#31614;&#35828;&#26126; <span class="required">*</span></label>';
+    html += '<textarea id="slBasicDesc" class="form-textarea sl-basic-desc-compact" rows="2">' + escHtml(tag.description || '') + '</textarea>';
+    html += '</div>';
+    html += '</section>';
+    html += renderSimpleRuleBlock(tag, 'text');
+    html += renderSimpleRuleBlock(tag, 'image');
+    html += renderSimpleCaseSection(tag, 'positive');
+    html += renderSimpleCaseSection(tag, 'negative');
+    html += '</div>';
+    return html;
+  }
+
+  function renderSimpleRuleBlock(tag, contentType) {
+    var rule = getLabelRule(tag.id, contentType) || { contentType: contentType, hitConditions: [], excludeConditions: [], disposalSuggestion: 'reject', applicableScenes: [] };
+    var title = contentType === 'text' ? '&#25991;&#26412;&#35268;&#21017;&#35774;&#32622;' : '&#22270;&#29255;&#35268;&#21017;&#35774;&#32622;';
+    var html = '<section class="sl-unified-section" data-rule-block="' + contentType + '">';
+    html += '<h4 class="sl-unified-title">' + title + '</h4>';
+    html += '<div class="sl-rule-section"><div class="sl-rule-section-title">&#21629;&#20013;&#26465;&#20214; <span class="sl-rule-count">' + (rule.hitConditions || []).length + '</span></div>';
+    html += '<div class="sl-condition-list" data-simple-cond-list="' + contentType + '|hit">';
+    (rule.hitConditions || []).forEach(function (condition) { html += renderSimpleConditionRow(contentType, 'hit', condition); });
+    html += '</div><button class="sl-add-btn" data-simple-add-cond="' + contentType + '|hit">+ &#21019;&#24314;&#21629;&#20013;&#35268;&#21017;</button></div>';
+    html += '<div class="sl-rule-section"><div class="sl-rule-section-title">&#25490;&#38500;&#26465;&#20214; <span class="sl-rule-count">' + (rule.excludeConditions || []).length + '</span></div>';
+    html += '<div class="sl-condition-list" data-simple-cond-list="' + contentType + '|exclude">';
+    (rule.excludeConditions || []).forEach(function (condition) { html += renderSimpleConditionRow(contentType, 'exclude', condition); });
+    html += '</div><button class="sl-add-btn" data-simple-add-cond="' + contentType + '|exclude">+ &#21019;&#24314;&#25490;&#38500;&#35268;&#21017;</button></div>';
+    html += '<div class="form-group"><label class="form-label">&#20351;&#29992;&#22330;&#26223;</label>';
+    html += '<input type="text" class="form-input" data-simple-scenes="' + contentType + '" value="' + escHtml((rule.applicableScenes || []).join(',')) + '" placeholder="&#35780;&#35770;,&#31169;&#20449;,&#21160;&#24577;">';
+    html += '</div></section>';
+    return html;
+  }
+
+  function renderSimpleConditionRow(contentType, type, condition) {
+    var value = condition && (condition.value || condition.ruleText || condition.text || condition.keyword) || '';
+    var label = type === 'hit' ? '&#21629;&#20013;&#35268;&#21017;' : '&#25490;&#38500;&#35268;&#21017;';
+    var disposal = condition && condition.disposalSuggestion ? condition.disposalSuggestion : (type === 'hit' ? 'reject' : 'pass');
+    var html = '<div class="sl-condition-row sl-simple-condition-row" data-content-type="' + contentType + '" data-cond-type="' + type + '">';
+    html += '<input type="text" class="form-input sl-simple-cond-value" value="' + escHtml(value) + '" placeholder="' + label + '">';
+    html += '<select class="form-select sl-simple-cond-disposal" title="处置建议">';
+    [{v:'reject',l:'不通过'},{v:'suspect',l:'嫌疑'},{v:'pass',l:'通过'}].forEach(function (option) {
+      html += '<option value="' + option.v + '"' + (disposal === option.v ? ' selected' : '') + '>' + option.l + '</option>';
+    });
+    html += '</select>';
+    html += '<button class="sl-cond-remove" data-action="remove-simple-cond">&times;</button>';
+    html += '</div>';
+    return html;
+  }
+
+  function renderSimpleCaseSection(tag, caseType) {
+    var cases = getLabelCases(tag.id, caseType);
+    var title = caseType === 'positive' ? '&#27491;&#26696;&#20363;' : '&#21453;&#26696;&#20363;';
+    var html = '<section class="sl-unified-section"><div class="sl-unified-section-head">';
+    html += '<h4 class="sl-unified-title">' + title + '</h4>';
+    html += '<button class="btn btn-primary btn-sm" id="btnAddCase" data-case-type="' + caseType + '">&#26032;&#22686;' + title + '</button>';
+    html += '</div>';
+    if (cases.length === 0) {
+      html += '<p class="form-hint">&#26242;&#26080;' + title + '</p>';
+    } else {
+      html += '<div class="sl-case-list">';
+      cases.forEach(function (item) {
+        html += '<div class="sl-case-item" data-case-id="' + item.id + '">';
+        html += '<div class="sl-case-item-head"><span class="badge ' + (item.contentType === 'text' ? 'badge-info' : 'badge-pass') + '">' + (item.contentType === 'text' ? '&#25991;&#26412;' : '&#22270;&#29255;') + '</span><span style="flex:1;"></span>';
+        html += '<button class="btn-link btn-sm" data-action="edit-case" data-id="' + item.id + '">&#32534;&#36753;</button>';
+        html += '<button class="btn-link btn-sm" data-action="delete-case" data-id="' + item.id + '" style="color:var(--danger);">&#21024;&#38500;</button></div>';
+        if (item.contentType === 'image' && item.imageUrl) {
+          html += '<div class="sl-case-item-body"><img class="sl-case-thumb" src="' + escHtml(item.imageUrl) + '" alt="案例图片"></div>';
+        } else {
+          html += '<div class="sl-case-item-body">' + escHtml((item.textContent || '').substring(0, 160)) + '</div>';
+        }
+        if (item.judgmentReason) html += '<div class="sl-case-item-reason">&#29702;&#30001;: ' + escHtml(item.judgmentReason.substring(0, 100)) + '</div>';
+        html += '</div>';
+      });
+      html += '</div>';
+    }
+    html += '</section>';
+    return html;
+  }
+
+  function saveRuleDraft() {
+    if (!currentRuleTagId) return;
+    var tag = getSampleTagById(currentRuleTagId);
+    if (!tag) return;
+    collectBasicInfo(tag);
+    collectRuleSettings(tag);
+    saveSampleTags();
+    saveLabelRules();
+    saveLabelCases();
+    showToast('草稿已保存');
+  }
+
+  function publishRule() {
+    if (!currentRuleTagId) return;
+    var tag = getSampleTagById(currentRuleTagId);
+    if (!tag) return;
+
+    // Validate basic info
+    var codeEl = document.getElementById('slBasicCode');
+    var descEl = document.getElementById('slBasicDesc');
+    if (!codeEl || !codeEl.value.trim()) { alert('???????'); return; }
+    var dup = sampleTags.filter(function(t){return t.id!==tag.id && t.code===codeEl.value.trim();});
+    if (dup.length > 0) { alert('???? "'+codeEl.value.trim()+'" ??????????'); return; }
+    if (!descEl || !descEl.value.trim()) { alert('???????????'); return; }
+
+    // Validate rules
+    var hitConds = [];
+    document.querySelectorAll('.sl-simple-condition-row[data-cond-type="hit"]').forEach(function(row){
+      var v = row.querySelector('.sl-simple-cond-value');
+      if (v && v.value.trim()) hitConds.push(true);
+    });
+    if (hitConds.length === 0) { alert('???????????????'); return; }
+
+    // Validate cases
+    var posCases = getLabelCases(tag.id, 'positive').filter(function(c){return c.reviewStatus==='confirmed';});
+    if (posCases.length === 0) { alert('发布前至少需要一个已确认的正例案例'); return; }
+    var negCases = getLabelCases(tag.id, 'negative').filter(function(c){return c.reviewStatus==='confirmed';});
+    if (negCases.length === 0) {
+      if (!confirm('当前规则没有反例，可能增加误杀风险，是否继续发布？')) return;
+    }
+
+    // Collect and save
+    collectBasicInfo(tag);
+    collectRuleSettings(tag);
+    tag.status = 'active';
+    saveSampleTags();
+    saveLabelRules();
+
+    // Generate version
+    var existingVer = labelVersions.filter(function(v){return v.labelId===tag.id&&v.status==='active';});
+    existingVer.forEach(function(v){v.status='archived';});
+    var newVer = (labelVersions.filter(function(v){return v.labelId===tag.id;}).length + 1) + '.0';
+    labelVersions.push({
+      id: generateId('VER'), labelId: tag.id, version: newVer,
+      snapshot: { tag: JSON.parse(JSON.stringify(tag)), rules: JSON.parse(JSON.stringify(labelRules.filter(function(r){return r.labelId===tag.id;}))), cases: JSON.parse(JSON.stringify(getLabelCases(tag.id))) },
+      changeSummary: '发布 v' + newVer, changeType: 'initial', impactScope: ['标注','训练','测试集','RAG知识库'],
+      status: 'active', createdBy: null, createdAt: now()
+    });
+    saveLabelVersions();
+    renderTagRulePanel(currentRuleTagId);
+    renderSampleTags();
+    showToast('规则已发布，版本 v' + newVer);
+  }
+
+  function disableRuleLabel() {
+    if (!currentRuleTagId) return;
+    var tag = getSampleTagById(currentRuleTagId);
+    if (!tag) return;
+    if (tag.status === 'disabled') { alert('该标签已停用'); return; }
+    var reason = prompt('请输入停用原因：');
+    if (!reason) return;
+    // Check references
+    var refCount = sampleLibrary.filter(function(s){return s.tagIds && s.tagIds.indexOf(tag.id)!==-1;}).length;
+    if (refCount > 0) {
+      if (!confirm('当前标签被 '+refCount+' 条样本引用，确认停用？\n历史样本保留标签，新增标注不可再选择此标签。')) return;
+    }
+    tag.status = 'disabled';
+    saveSampleTags();
+    // Archive active version
+    labelVersions.filter(function(v){return v.labelId===tag.id&&v.status==='active';}).forEach(function(v){v.status='archived';});
+    labelVersions.push({
+      id: generateId('VER'), labelId: tag.id, version: '---',
+      snapshot: {}, changeSummary: '停用标签: '+reason, changeType: 'status', impactScope: ['标注'],
+      status: 'active', createdBy: null, createdAt: now()
+    });
+    saveLabelVersions();
+    renderTagRulePanel(currentRuleTagId);
+    renderSampleTags();
+    showToast('标签已停用');
+  }
+
+  function copyRuleLabel() {
+    if (!currentRuleTagId) return;
+    var tag = getSampleTagById(currentRuleTagId);
+    if (!tag) return;
+    var newId = generateId('STAG');
+    var newTag = JSON.parse(JSON.stringify(tag));
+    newTag.id = newId;
+    newTag.name = (tag.name || '') + '（副本）';
+    newTag.code = (tag.code || '') + '_COPY';
+    newTag.status = 'draft';
+    newTag.createdAt = now();
+    newTag.updatedAt = now();
+    sampleTags.push(newTag);
+    saveSampleTags();
+
+    // Copy rules
+    var rules = labelRules.filter(function(r){return r.labelId===tag.id;});
+    rules.forEach(function(r){
+      var r2 = JSON.parse(JSON.stringify(r));
+      r2.id = generateId('RULE'); r2.labelId = newId; r2.status = 'draft';
+      labelRules.push(r2);
+    });
+    saveLabelRules();
+    currentRuleTagId = newId;
+    renderSampleTags();
+    renderTagRulePanel(newId);
+    showToast('标签已复制，请修改标签编码和名称');
+  }
+
+  function showToast(msg) {
+    var el = document.getElementById('slRuleToast');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'slRuleToast';
+      el.style.cssText = 'position:fixed;top:20px;left:50%;transform:translateX(-50%);background:#202123;color:#fff;padding:10px 24px;border-radius:8px;font-size:14px;z-index:9999;transition:opacity 0.3s;pointer-events:none;';
+      document.body.appendChild(el);
+    }
+    el.textContent = msg;
+    el.style.opacity = '1';
+    clearTimeout(el._timeout);
+    el._timeout = setTimeout(function(){el.style.opacity='0';}, 2000);
+  }
+
+  // ── Collect form data helpers ──
+  function collectBasicInfo(tag) {
+    var codeEl = document.getElementById('slBasicCode');
+    var descEl = document.getElementById('slBasicDesc');
+    if (codeEl) tag.code = codeEl.value.trim();
+    if (descEl) tag.description = descEl.value.trim();
+    updateSampleTagPath(tag.id);
+    tag.updatedAt = now();
+  }
+
+  function collectRuleSettings(tag) {
+    ['text', 'image'].forEach(function (ct) {
+      var block = document.querySelector('[data-rule-block="' + ct + '"]');
+      if (!block) return;
+      var rule = getLabelRule(tag.id, ct);
+      var isNew = !rule;
+      if (isNew) {
+        rule = { id: generateId('RULE'), labelId: tag.id, contentType: ct, ruleSummary:'', keywords:[], semanticFeatures:'', visualFeatures:'', ocrFeatures:[], hitConditions:[], excludeConditions:[], disposalSuggestion:'reject', applicableScenes:[], version:1, status:'draft', createdBy:null, createdAt:now(), updatedAt:now() };
+      }
+
+      var disposalEl = block.querySelector('[data-simple-disposal="' + ct + '"]');
+      if (disposalEl) rule.disposalSuggestion = disposalEl.value;
+      var scenesEl = block.querySelector('[data-simple-scenes="' + ct + '"]');
+      if (scenesEl) rule.applicableScenes = scenesEl.value.split(',').map(function(s){ return s.trim(); }).filter(Boolean);
+
+      rule.hitConditions = [];
+      block.querySelectorAll('.sl-simple-condition-row[data-cond-type="hit"]').forEach(function (row) {
+        var input = row.querySelector('.sl-simple-cond-value');
+        var disposal = row.querySelector('.sl-simple-cond-disposal');
+        var value = input ? input.value.trim() : '';
+        if (value) rule.hitConditions.push({ id: generateId('HC'), field: 'rule', operator: 'custom', value: value, disposalSuggestion: disposal ? disposal.value : 'reject' });
+      });
+      rule.excludeConditions = [];
+      block.querySelectorAll('.sl-simple-condition-row[data-cond-type="exclude"]').forEach(function (row) {
+        var input = row.querySelector('.sl-simple-cond-value');
+        var disposal = row.querySelector('.sl-simple-cond-disposal');
+        var value = input ? input.value.trim() : '';
+        if (value) rule.excludeConditions.push({ id: generateId('EC'), field: 'rule', operator: 'custom', value: value, disposalSuggestion: disposal ? disposal.value : 'pass' });
+      });
+
+      rule.updatedAt = now();
+      if (isNew) labelRules.push(rule);
+    });
+    saveLabelRules();
+  }
+
+  // ── Case CRUD ──
+  function openCaseModal(caseId, caseType, tagId) {
+    var existing = caseId ? labelCases.filter(function(c){return c.id===caseId;})[0] : null;
+    var tag = getSampleTagById(tagId || currentRuleTagId);
+    if (!tag) return;
+    var selectedType = existing ? existing.contentType || 'text' : 'text';
+    var selectedCaseType = existing ? existing.caseType : caseType;
+
+    var html = '<div class="modal-overlay" id="caseModalOverlay" style="display:flex;"><div class="modal" style="max-width:620px;max-height:85vh;overflow-y:auto;"><div class="modal-header">';
+    html += '<h3>' + (existing ? '&#32534;&#36753;&#26696;&#20363;' : '&#26032;&#22686;&#26696;&#20363;') + '</h3>';
+    html += '<button class="modal-close" id="btnCaseModalClose">&times;</button></div>';
+    html += '<div class="form-row"><div class="form-group"><label class="form-label">&#26696;&#20363;&#31867;&#22411;</label>';
+    html += '<select id="caseType" class="form-select"><option value="positive"' + (selectedCaseType === 'positive' ? ' selected' : '') + '>&#27491;&#26696;&#20363;</option><option value="negative"' + (selectedCaseType === 'negative' ? ' selected' : '') + '>&#21453;&#26696;&#20363;</option></select></div>';
+    html += '<div class="form-group"><label class="form-label">&#20869;&#23481;&#31867;&#22411;</label>';
+    html += '<select id="caseContentType" class="form-select"><option value="text"' + (selectedType === 'text' ? ' selected' : '') + '>&#25991;&#26412;</option><option value="image"' + (selectedType === 'image' ? ' selected' : '') + '>&#22270;&#29255;</option></select></div></div>';
+    html += '<div id="caseTextFields" style="display:' + (selectedType === 'text' ? '' : 'none') + ';"><div class="form-group"><label class="form-label">&#25991;&#26412;&#20869;&#23481;</label>';
+    html += '<textarea id="caseTextContent" class="form-textarea" rows="5">' + escHtml(existing ? existing.textContent || '' : '') + '</textarea></div></div>';
+    html += '<div id="caseImageFields" style="display:' + (selectedType === 'image' ? '' : 'none') + ';">';
+    html += '<div class="form-group"><label class="form-label">&#22270;&#29255; URL</label><input type="text" id="caseImageUrl" class="form-input" value="' + escHtml(existing ? existing.imageUrl || '' : '') + '" placeholder="&#36755;&#20837;&#22270;&#29255; URL"></div>';
+    html += '<div class="form-group"><label class="form-label">&#26412;&#22320;&#22270;&#29255;</label><input type="file" id="caseImageFile" class="form-input" accept="image/*"></div>';
+    html += '<div class="sl-case-image-preview" id="caseImagePreview" style="display:' + (existing && existing.imageUrl ? '' : 'none') + ';"><img id="caseImagePreviewImg" src="' + escHtml(existing ? existing.imageUrl || '' : '') + '" alt="&#26696;&#20363;&#22270;&#29255;&#39044;&#35272;"></div>';
+    html += '</div>';
+    html += '<div class="form-group"><label class="form-label">&#21028;&#26029;&#29702;&#30001;</label><textarea id="caseJudgmentReason" class="form-textarea" rows="3">' + escHtml(existing ? existing.judgmentReason || '' : '') + '</textarea></div>';
+    html += '<input type="hidden" id="caseId" value="' + (existing ? existing.id : '') + '">';
+    html += '<input type="hidden" id="caseTagId" value="' + tag.id + '">';
+    html += '<div class="form-actions"><button class="btn btn-primary" id="btnCaseSave">&#20445;&#23384;</button><button class="btn btn-secondary" id="btnCaseCancel">&#21462;&#28040;</button></div>';
+    html += '</div></div>';
+
+    var overlay = document.createElement('div');
+    overlay.innerHTML = html;
+    document.body.appendChild(overlay.firstElementChild);
+    document.getElementById('caseModalOverlay').addEventListener('click', function(e){if(e.target===this)closeCaseModal();});
+    document.getElementById('btnCaseModalClose').addEventListener('click', closeCaseModal);
+    document.getElementById('btnCaseCancel').addEventListener('click', closeCaseModal);
+    document.getElementById('caseContentType').addEventListener('change', function(){
+      var isText = this.value === 'text';
+      document.getElementById('caseTextFields').style.display = isText ? '' : 'none';
+      document.getElementById('caseImageFields').style.display = isText ? 'none' : '';
+    });
+    document.getElementById('caseImageUrl').addEventListener('input', updateCaseImagePreview);
+    document.getElementById('caseImageFile').addEventListener('change', handleCaseImageFile);
+    document.getElementById('btnCaseSave').addEventListener('click', saveCase);
+  }
+
+  function closeCaseModal() {
+    var overlay = document.getElementById('caseModalOverlay');
+    if (overlay) overlay.remove();
+  }
+
+  function updateCaseImagePreview() {
+    var urlEl = document.getElementById('caseImageUrl');
+    var preview = document.getElementById('caseImagePreview');
+    var img = document.getElementById('caseImagePreviewImg');
+    if (!urlEl || !preview || !img) return;
+    var url = urlEl.value.trim();
+    if (!url) {
+      preview.style.display = 'none';
+      img.removeAttribute('src');
+      return;
+    }
+    img.src = url;
+    preview.style.display = '';
+  }
+
+  function handleCaseImageFile(e) {
+    var file = e.target.files && e.target.files[0];
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function () {
+      var urlEl = document.getElementById('caseImageUrl');
+      if (urlEl) urlEl.value = reader.result;
+      updateCaseImagePreview();
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function saveCase() {
+    var caseId = document.getElementById('caseId').value;
+    var tagId = document.getElementById('caseTagId').value;
+    var caseType = document.getElementById('caseType').value;
+    var contentType = document.getElementById('caseContentType').value;
+    var textContent = document.getElementById('caseTextContent').value.trim();
+    var imageUrl = document.getElementById('caseImageUrl').value.trim();
+    var judgmentReason = document.getElementById('caseJudgmentReason').value.trim();
+
+    if (contentType === 'text' && !textContent) { alert('???????'); return; }
+    if (contentType === 'image' && !imageUrl) { alert('???????????? URL'); return; }
+    if (!judgmentReason) { alert('???????'); return; }
+
+    var nowStr = now();
+    if (caseId) {
+      var c = labelCases.filter(function(x){return x.id===caseId;})[0];
+      if (c) {
+        c.caseType = caseType; c.contentType = contentType; c.textContent = textContent; c.imageUrl = imageUrl;
+        c.ocrText = ''; c.judgmentReason = judgmentReason; c.keyEvidence = ''; c.scene = '';
+        c.judgmentStatus = caseType === 'positive' ? 'reject' : 'pass'; c.reviewStatus = 'confirmed';
+        c.canUseForTraining = true; c.canUseForRag = true; c.updatedAt = nowStr;
+      }
+    } else {
+      labelCases.push({
+        id: generateId('CASE'), labelId: tagId, caseType: caseType, contentType: contentType,
+        textContent: textContent, imageUrl: imageUrl, ocrText: '',
+        judgmentStatus: caseType === 'positive' ? 'reject' : 'pass', reviewStatus: 'confirmed', judgmentReason: judgmentReason,
+        keyEvidence: '', scene: '', correctLabelId: null,
+        canUseForTraining: true, canUseForRag: true,
+        createdBy: null, createdAt: nowStr, updatedAt: nowStr
+      });
+    }
+    saveLabelCases();
+    closeCaseModal();
+    renderTagRulePanel(currentRuleTagId);
+  }
+
+  function deleteCase(caseId) {
+    if (!confirm('确定删除此案例吗？')) return;
+    labelCases = labelCases.filter(function(c){return c.id!==caseId;});
+    saveLabelCases();
+    renderTagRulePanel(currentRuleTagId);
+  }
+
+  // ── Convert sample to case ──
+  function convertSampleToCase(sampleId, tagId) {
+    var sample = getSampleById(sampleId);
+    if (!sample) return;
+    var caseType = confirm('确定将样本设为"正例"吗？\n点击"取消"将设为反例。') ? 'positive' : 'negative';
+    labelCases.push({
+      id: generateId('CASE'), labelId: tagId, caseType: caseType, contentType: sample.contentType || 'text',
+      textContent: sample.content || '', imageUrl: sample.imageUrl || '', ocrText: '',
+      judgmentStatus: sample.status || 'reject', reviewStatus: 'pending', judgmentReason: sample.reviewReason || '',
+      keyEvidence: '', scene: '', correctLabelId: null,
+      canUseForTraining: true, canUseForRag: true,
+      createdBy: null, createdAt: now(), updatedAt: now()
+    });
+    saveLabelCases();
+    renderTagRulePanel(currentRuleTagId);
+    showToast('样本已转为' + (caseType==='positive'?'正例':'反例') + '，请补充判定理由和关键命中点');
+  }
+
+  function openSlTagModal(tagId, parentId) {
+    var modal = document.getElementById('slTagModal');
+    var form = document.getElementById('slTagForm');
+    form.reset();
+
+    if (tagId) {
+      // Edit existing
+      var tag = getSampleTagById(tagId);
+      if (!tag) return;
+      document.getElementById('slTagModalTitle').textContent = '编辑标签 - ' + tag.name;
+      document.getElementById('slTagId').value = tag.id;
+      document.getElementById('slTagParentId').value = tag.parentId || '';
+      document.getElementById('slTagLevel').value = tag.level;
+      document.getElementById('slTagName').value = tag.name;
+      document.getElementById('slTagDesc').value = tag.description || '';
+      document.getElementById('slTagPositive').value = '';
+      document.getElementById('slTagNegative').value = '';
+      var ct = tag.applicableContentTypes;
+      document.getElementById('slTagAppType').value = ct && ct.length > 0 ? ct[0] : 'all';
+      document.getElementById('slTagStatus').value = tag.status || 'active';
+    } else {
+      // New
+      var parentTag = parentId ? getSampleTagById(parentId) : null;
+      var level = parentTag ? parentTag.level + 1 : 1;
+      document.getElementById('slTagModalTitle').textContent = parentTag ? '新增子标签 — ' + parentTag.name : '新增一级标签';
+      document.getElementById('slTagId').value = '';
+      document.getElementById('slTagParentId').value = parentId || '';
+      document.getElementById('slTagLevel').value = level;
+      document.getElementById('slTagStatus').value = 'active';
+    }
+    modal.style.display = 'flex';
+  }
+
+  function handleSlTagSubmit(e) {
+    e.preventDefault();
+    var tagId = document.getElementById('slTagId').value;
+    var parentId = document.getElementById('slTagParentId').value || null;
+    var level = parseInt(document.getElementById('slTagLevel').value) || 1;
+    var name = document.getElementById('slTagName').value.trim();
+    if (!name) { alert('请输入标签名称'); return; }
+
+    var parentTag = parentId ? getSampleTagById(parentId) : null;
+    var path = parentTag ? (parentTag.path || parentTag.name) + '/' + name : name;
+    var siblings = sampleTags.filter(function (t) { return (t.parentId || null) === (parentId || null) && t.id !== tagId; });
+
+    var data = {
+      name: name,
+      code: '',
+      level: level,
+      parentId: parentId || null,
+      path: path,
+      description: document.getElementById('slTagDesc').value.trim(),
+      applicableContentTypes: [document.getElementById('slTagAppType').value === 'all' ? 'text' : document.getElementById('slTagAppType').value],
+      suggestedStatus: 'reject',
+      riskLevel: 'medium',
+      status: document.getElementById('slTagStatus').value,
+      ownerId: null,
+      sortOrder: siblings.length
+    };
+
+    if (tagId) {
+      var tag = getSampleTagById(tagId);
+      if (tag) {
+        data.code = tag.code || data.code;
+        data.sortOrder = typeof tag.sortOrder === 'number' ? tag.sortOrder : data.sortOrder;
+        Object.keys(data).forEach(function (k) { tag[k] = data[k]; });
+        tag.updatedAt = now();
+        updateSampleTagPath(tag.id);
+      }
+    } else {
+      data.id = generateId('STAG');
+      data.code = 'TAG_' + Date.now().toString(36).toUpperCase();
+      data.createdAt = now();
+      data.updatedAt = now();
+      sampleTags.push(data);
+    }
+    saveSampleTags();
+    document.getElementById('slTagModal').style.display = 'none';
+    renderSampleTags();
+    if (currentRuleTagId) showTagDetail(currentRuleTagId);
+    // Refresh detail category dropdowns
+    if (currentSampleId) {
+      renderSampleDetail(currentSampleId);
+    }
+  }
+
+  function openSlRootTagModal() {
+    var old = document.getElementById('slRootTagModal');
+    if (old) old.remove();
+    var html = '<div class="modal-overlay" id="slRootTagModal" style="display:flex;">';
+    html += '<div class="modal sl-tag-action-modal"><div class="modal-header">';
+    html += '<h3>&#26032;&#24314;&#19968;&#32423;&#26631;&#31614;</h3>';
+    html += '<button class="modal-close" id="btnSlRootTagClose">&times;</button></div>';
+    html += '<div class="form-group"><label class="form-label" for="slRootTagName">&#19968;&#32423;&#26631;&#31614;&#21517;&#31216; <span class="required">*</span></label>';
+    html += '<input type="text" id="slRootTagName" class="form-input" maxlength="50" autocomplete="off"></div>';
+    html += '<div class="form-group"><label class="form-label" for="slRootTagValue">&#26631;&#31614;&#20540; <span class="required">*</span></label>';
+    html += '<input type="text" id="slRootTagValue" class="form-input" maxlength="80" autocomplete="off"></div>';
+    html += '<div class="form-actions">';
+    html += '<button type="button" class="btn btn-primary" id="btnSlRootTagSave">&#20445;&#23384;</button>';
+    html += '<button type="button" class="btn btn-secondary" id="btnSlRootTagCancel">&#21462;&#28040;</button>';
+    html += '</div></div></div>';
+    document.body.insertAdjacentHTML('beforeend', html);
+
+    function close() {
+      var modal = document.getElementById('slRootTagModal');
+      if (modal) modal.remove();
+    }
+    document.getElementById('btnSlRootTagClose').addEventListener('click', close);
+    document.getElementById('btnSlRootTagCancel').addEventListener('click', close);
+    document.getElementById('btnSlRootTagSave').addEventListener('click', function () {
+      var name = document.getElementById('slRootTagName').value.trim();
+      var value = document.getElementById('slRootTagValue').value.trim();
+      if (!name) { alert('请填写一级标签名称'); return; }
+      if (!value) { alert('请填写标签值'); return; }
+      var nameExists = sampleTags.some(function (tag) { return tag.level === 1 && (tag.name || '').trim() === name; });
+      if (nameExists) { alert('一级标签名称已存在'); return; }
+      var valueKey = value.toLowerCase();
+      var valueExists = sampleTags.some(function (tag) { return tag.level === 1 && String(tag.code || '').trim().toLowerCase() === valueKey; });
+      if (valueExists) { alert('标签值已存在'); return; }
+      var siblings = sampleTags.filter(function (tag) { return tag.level === 1; });
+      var newTag = {
+        id: generateId('STAG'),
+        name: name,
+        code: value,
+        level: 1,
+        parentId: null,
+        path: name,
+        description: '',
+        applicableContentTypes: ['text', 'image'],
+        suggestedStatus: 'reject',
+        riskLevel: 'medium',
+        status: 'active',
+        ownerId: null,
+        sortOrder: siblings.length,
+        createdAt: now(),
+        updatedAt: now()
+      };
+      sampleTags.push(newTag);
+      saveSampleTags();
+      close();
+      renderSampleTags();
+      showTagDetail(newTag.id);
+    });
+  }
+
+  function openSlTagActionModal(tagId) {
+    var tag = getSampleTagById(tagId);
+    if (!tag) return;
+    var old = document.getElementById('slTagActionModal');
+    if (old) old.remove();
+
+    var isL1orL2 = tag.level === 1 || tag.level === 2;
+    var childLevel = tag.level + 1;
+    var childLabel = childLevel === 2 ? '二级' : '三级';
+
+    var html = '<div class="modal-overlay" id="slTagActionModal" style="display:flex;">';
+    html += '<div class="modal sl-tag-action-modal"><div class="modal-header">';
+    html += '<h3>标签操作 — ' + escHtml(tag.name) + '</h3>';
+    html += '<button class="modal-close" id="btnSlTagActionClose">&times;</button></div>';
+
+    // Edit current tag name
+    html += '<div class="form-group">';
+    html += '<label class="form-label" for="slTagActionName">标签名称</label>';
+    html += '<input type="text" id="slTagActionName" class="form-input" maxlength="50" value="' + escHtml(tag.name || '') + '">';
+    html += '</div>';
+
+    // Add child tag section (only for level 1 and 2)
+    if (isL1orL2) {
+      html += '<div class="sl-action-divider"></div>';
+      html += '<div class="sl-action-section-title">添加' + childLabel + '子标签</div>';
+      html += '<div class="form-row">';
+      html += '<div class="form-group">';
+      html += '<label class="form-label" for="slActionChildName">子标签名称 <span class="required">*</span></label>';
+      html += '<input type="text" id="slActionChildName" class="form-input" maxlength="50" placeholder="请输入' + childLabel + '标签名称" autocomplete="off">';
+      html += '</div>';
+      html += '<div class="form-group">';
+      html += '<label class="form-label" for="slActionChildValue">标签值 <span class="required">*</span></label>';
+      html += '<input type="text" id="slActionChildValue" class="form-input" maxlength="80" placeholder="请输入标签值" autocomplete="off">';
+      html += '</div>';
+      html += '</div>';
+      html += '<div class="form-actions" style="margin-top:0;">';
+      html += '<button type="button" class="btn btn-primary btn-sm" id="btnSlActionAddChild">添加' + childLabel + '子标签</button>';
+      html += '<span class="form-hint-inline" id="slActionChildMsg" style="color:var(--success);display:none;"></span>';
+      html += '</div>';
+    }
+
+    // Action buttons
+    html += '<div class="sl-action-divider"></div>';
+    html += '<div class="form-actions">';
+    html += '<button type="button" class="btn btn-primary" id="btnSlTagActionSave">保存名称</button>';
+    html += '<button type="button" class="btn btn-danger" id="btnSlTagActionDelete">删除标签</button>';
+    html += '<button type="button" class="btn btn-secondary" id="btnSlTagActionCancel">取消</button>';
+    html += '</div></div></div>';
+    document.body.insertAdjacentHTML('beforeend', html);
+
+    function close() {
+      var modal = document.getElementById('slTagActionModal');
+      if (modal) modal.remove();
+    }
+    document.getElementById('btnSlTagActionClose').addEventListener('click', close);
+    document.getElementById('btnSlTagActionCancel').addEventListener('click', close);
+
+    // Save name
+    document.getElementById('btnSlTagActionSave').addEventListener('click', function () {
+      var name = document.getElementById('slTagActionName').value.trim();
+      if (!name) { alert('请输入标签名称'); return; }
+      tag.name = name;
+      tag.updatedAt = now();
+      updateSampleTagPath(tag.id);
+      saveSampleTags();
+      close();
+      renderSampleTags();
+      showTagDetail(tag.id);
+    });
+
+    // Delete
+    document.getElementById('btnSlTagActionDelete').addEventListener('click', function () {
+      close();
+      handleSlTagDelete(tag.id);
+    });
+
+    // Add child tag
+    if (isL1orL2) {
+      document.getElementById('btnSlActionAddChild').addEventListener('click', function () {
+        var childName = document.getElementById('slActionChildName').value.trim();
+        var childValue = document.getElementById('slActionChildValue').value.trim();
+        var msgEl = document.getElementById('slActionChildMsg');
+
+        if (!childName) { msgEl.style.display = 'inline'; msgEl.style.color = 'var(--danger)'; msgEl.textContent = '请填写子标签名称'; return; }
+        if (!childValue) { msgEl.style.display = 'inline'; msgEl.style.color = 'var(--danger)'; msgEl.textContent = '请填写标签值'; return; }
+
+        // Validate tag name uniqueness among siblings (same parent)
+        var siblings = sampleTags.filter(function (t) { return (t.parentId || null) === tagId; });
+        var nameExists = siblings.some(function (t) { return (t.name || '').trim() === childName; });
+        if (nameExists) { msgEl.style.display = 'inline'; msgEl.style.color = 'var(--danger)'; msgEl.textContent = '子标签名称已存在，请更换'; return; }
+
+        // Validate tag value uniqueness globally
+        var valueKey = childValue.toLowerCase();
+        var valueExists = sampleTags.some(function (t) { return String(t.code || '').trim().toLowerCase() === valueKey; });
+        if (valueExists) { msgEl.style.display = 'inline'; msgEl.style.color = 'var(--danger)'; msgEl.textContent = '标签值已存在，请更换'; return; }
+
+        // Create child tag
+        var childSiblings = sampleTags.filter(function (t) { return t.parentId === tagId; });
+        var newChild = {
+          id: generateId('STAG'),
+          name: childName,
+          code: childValue,
+          level: childLevel,
+          parentId: tagId,
+          path: (tag.path || tag.name) + '/' + childName,
+          description: '',
+          applicableContentTypes: tag.applicableContentTypes || ['text', 'image'],
+          suggestedStatus: 'reject',
+          riskLevel: 'medium',
+          status: 'active',
+          ownerId: null,
+          sortOrder: childSiblings.length,
+          createdAt: now(),
+          updatedAt: now()
+        };
+        sampleTags.push(newChild);
+        saveSampleTags();
+
+        // Expand parent and refresh tree
+        slExpandedTagIds[tagId] = true;
+        renderSampleTags();
+        showTagDetail(tag.id);
+
+        // Show success and clear inputs
+        msgEl.style.display = 'inline';
+        msgEl.style.color = 'var(--success)';
+        msgEl.textContent = '子标签「' + childName + '」已添加';
+        document.getElementById('slActionChildName').value = '';
+        document.getElementById('slActionChildValue').value = '';
+      });
+    }
+  }
+
+  function moveSampleTagOrder(tagId, direction) {
+    var tag = getSampleTagById(tagId);
+    if (!tag) return;
+    var siblings = getSampleSiblingTags(tag);
+    siblings.forEach(function (item, index) { item.sortOrder = index; });
+    var index = siblings.findIndex(function (item) { return item.id === tagId; });
+    var targetIndex = direction === 'up' ? index - 1 : index + 1;
+    if (index < 0 || targetIndex < 0 || targetIndex >= siblings.length) return;
+    var temp = siblings[index].sortOrder;
+    siblings[index].sortOrder = siblings[targetIndex].sortOrder;
+    siblings[targetIndex].sortOrder = temp;
+    saveSampleTags();
+    renderSampleTags();
+    showTagDetail(tagId);
+  }
+
+  function openSlTagMoveModal(tagId) {
+    var tag = getSampleTagById(tagId);
+    if (!tag) return;
+    if (tag.level === 1) {
+      alert('一级标签通过上移/下移调整顺序。');
+      return;
+    }
+    var parentLevel = tag.level - 1;
+    var parentOptions = sampleTags
+      .filter(function (item) { return item.level === parentLevel && item.id !== tag.id; })
+      .sort(function (a, b) { return (a.sortOrder || 0) - (b.sortOrder || 0); });
+    var old = document.getElementById('slTagMoveModal');
+    if (old) old.remove();
+    var html = '<div class="modal-overlay" id="slTagMoveModal" style="display:flex;">';
+    html += '<div class="modal"><div class="modal-header">';
+    html += '<h3>移动标签 - ' + escHtml(tag.name) + '</h3>';
+    html += '<button class="modal-close" id="btnSlTagMoveClose">&times;</button></div>';
+    html += '<div class="form-group"><label class="form-label" for="slTagMoveParent">目标父级标签</label>';
+    html += '<select id="slTagMoveParent" class="form-select">';
+    parentOptions.forEach(function (parent) {
+      html += '<option value="' + parent.id + '"' + (parent.id === tag.parentId ? ' selected' : '') + '>' + escHtml(parent.path || parent.name) + '</option>';
+    });
+    html += '</select></div><div class="form-actions">';
+    html += '<button type="button" class="btn btn-primary" id="btnSlTagMoveSubmit">确认移动</button>';
+    html += '<button type="button" class="btn btn-secondary" id="btnSlTagMoveCancel">取消</button>';
+    html += '</div></div></div>';
+    document.body.insertAdjacentHTML('beforeend', html);
+
+    function close() {
+      var modal = document.getElementById('slTagMoveModal');
+      if (modal) modal.remove();
+    }
+    document.getElementById('btnSlTagMoveClose').addEventListener('click', close);
+    document.getElementById('btnSlTagMoveCancel').addEventListener('click', close);
+    document.getElementById('btnSlTagMoveSubmit').addEventListener('click', function () {
+      var parentId = document.getElementById('slTagMoveParent').value;
+      if (!parentId || parentId === tag.parentId) { close(); return; }
+      var newParent = getSampleTagById(parentId);
+      if (!newParent || newParent.level !== parentLevel) return;
+      tag.parentId = parentId;
+      tag.sortOrder = getSampleChildTags(parentId).length;
+      updateSampleTagPath(tag.id);
+      slExpandedTagIds[parentId] = true;
+      saveSampleTags();
+      close();
+      renderSampleTags();
+      showTagDetail(tag.id);
+    });
+  }
+
+  function handleSlTagDelete(tagId) {
+    var tag = getSampleTagById(tagId);
+    if (!tag) return;
+    var childIds = getSampleDescendantTagIds(tagId);
+    var deleteIds = [tagId].concat(childIds);
+    var childCount = childIds.length;
+    var sampleCount = getSampleTagSampleCount(tagId);
+    var msg = '确定删除标签 "' + tag.name + '" 吗？';
+    if (childCount > 0) msg += '\n该标签下有 ' + childCount + ' 个子标签将被一并删除。';
+    if (sampleCount > 0) msg += '\n有 ' + sampleCount + ' 条样本关联此标签。';
+    if (!confirm(msg)) return;
+
+    sampleTags = sampleTags.filter(function (t) { return deleteIds.indexOf(t.id) === -1; });
+    sampleLibrary.forEach(function (sample) {
+      sample.tagIds = (sample.tagIds || []).filter(function (id) { return deleteIds.indexOf(id) === -1; });
+      if (deleteIds.indexOf(sample.categoryId) !== -1) sample.categoryId = null;
+      sample.updatedAt = now();
+    });
+    labelRules = labelRules.filter(function (rule) { return deleteIds.indexOf(rule.labelId) === -1; });
+    labelCases = labelCases.filter(function (item) { return deleteIds.indexOf(item.labelId) === -1; });
+    labelVersions = labelVersions.filter(function (item) { return deleteIds.indexOf(item.labelId) === -1; });
+    saveSampleTags();
+    saveSampleLibrary();
+    saveLabelRules();
+    saveLabelCases();
+    saveLabelVersions();
+    renderSampleTags();
+    currentRuleTagId = null;
+    document.getElementById('slTagEditPanel').innerHTML = '<h3 class="sl-tag-edit-title">选择标签查看或编辑</h3><p class="form-hint">点击左侧标签节点可查看详情</p>';
+  }
+
+  // ── Tag Rule Panel: Conditions (DOM manipulation, saved via collectRuleSettings) ──
+  function addHitCondition() {
+    var ct = currentRuleContentType;
+    var html = renderConditionRow('hit', currentRuleTagId, { field: 'content', operator: 'contains', value: '' }, 0, ct);
+    var list = document.getElementById('slHitCondList');
+    if (list) list.insertAdjacentHTML('beforeend', html);
+  }
+
+  function removeHitCondition(btn) {
+    var row = btn.closest('.sl-condition-row');
+    if (row) row.remove();
+  }
+
+  function addExcludeCondition() {
+    var ct = currentRuleContentType;
+    var html = renderConditionRow('exc', currentRuleTagId, { field: 'content', operator: 'contains', value: '' }, 0, ct);
+    var list = document.getElementById('slExcCondList');
+    if (list) list.insertAdjacentHTML('beforeend', html);
+  }
+
+  function removeExcludeCondition(btn) {
+    var row = btn.closest('.sl-condition-row');
+    if (row) row.remove();
+  }
+
+  function addSimpleCondition(config) {
+    var parts = (config || '').split('|');
+    var contentType = parts[0] || 'text';
+    var type = parts[1] || 'hit';
+    var list = document.querySelector('[data-simple-cond-list="' + contentType + '|' + type + '"]');
+    if (list) list.insertAdjacentHTML('beforeend', renderSimpleConditionRow(contentType, type, { value: '' }));
+  }
+
+  function removeSimpleCondition(btn) {
+    var row = btn.closest('.sl-simple-condition-row');
+    if (row) row.remove();
+  }
+
+  function saveTagRules(tagId) {
+    var tag = getSampleTagById(tagId);
+    if (!tag) return;
+    // Collect description
+    var descEl = document.getElementById('slRuleDesc');
+    if (descEl) tag.description = descEl.value.trim();
+
+    // Collect hit conditions from DOM
+    var hitRows = document.querySelectorAll('#slHitCondList .sl-condition-row');
+    tag.hitConditions = [];
+    hitRows.forEach(function (row) {
+      var fieldEl = row.querySelector('.sl-cond-field');
+      var opEl = row.querySelector('.sl-cond-op');
+      var valEl = row.querySelector('.sl-cond-value');
+      if (fieldEl && opEl && valEl) {
+        tag.hitConditions.push({ id: generateId('HC'), field: fieldEl.value, operator: opEl.value, value: valEl.value.trim() });
+      }
+    });
+
+    // Collect exclude conditions from DOM
+    var excRows = document.querySelectorAll('#slExcCondList .sl-condition-row');
+    tag.excludeConditions = [];
+    excRows.forEach(function (row) {
+      var fieldEl = row.querySelector('.sl-cond-field');
+      var opEl = row.querySelector('.sl-cond-op');
+      var valEl = row.querySelector('.sl-cond-value');
+      if (fieldEl && opEl && valEl) {
+        tag.excludeConditions.push({ id: generateId('EC'), field: fieldEl.value, operator: opEl.value, value: valEl.value.trim() });
+      }
+    });
+
+    saveSampleTags();
+    renderTagRulePanel(tagId);
+  }
+
+  // ── Datasets ─────────────────────────────────────────────────────
+  function renderSampleDatasets() {
+    var tbody = document.getElementById('slDatasetTableBody');
+    if (sampleDatasets.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="5" class="table-empty">暂无数据集</td></tr>';
+    } else {
+      tbody.innerHTML = sampleDatasets.map(function (ds) {
+        return '<tr>' +
+          '<td><a class="link" data-action="sl-dataset-view" data-id="' + ds.id + '" href="#">' + ds.name + '</a></td>' +
+          '<td>' + slDatasetTypeLabel(ds.type) + '</td>' +
+          '<td>' + (ds.sampleIds ? ds.sampleIds.length : 0) + '</td>' +
+          '<td>' + formatTime(ds.createdAt) + '</td>' +
+          '<td>' +
+            '<a class="link" data-action="sl-dataset-edit" data-id="' + ds.id + '" href="#">编辑</a> ' +
+            '<a class="link" data-action="sl-dataset-delete" data-id="' + ds.id + '" href="#">删除</a>' +
+          '</td></tr>';
+      }).join('');
+    }
+  }
+
+  function openSlDatasetModal(datasetId) {
+    var modal = document.getElementById('slDatasetModal');
+    var form = document.getElementById('slDatasetForm');
+    form.reset();
+
+    if (datasetId) {
+      var ds = sampleDatasets.filter(function (d) { return d.id === datasetId; })[0];
+      if (!ds) return;
+      document.getElementById('slDatasetModalTitle').textContent = '编辑数据集';
+      document.getElementById('slDatasetId').value = ds.id;
+      document.getElementById('slDatasetName').value = ds.name;
+      document.getElementById('slDatasetType').value = ds.type;
+      renderSlSamplePicker(ds.sampleIds || []);
+    } else {
+      document.getElementById('slDatasetModalTitle').textContent = '新建数据集';
+      document.getElementById('slDatasetId').value = '';
+      renderSlSamplePicker([]);
+    }
+    modal.style.display = 'flex';
+  }
+
+  function renderSlSamplePicker(selectedIds) {
+    var picker = document.getElementById('slSamplePicker');
+    if (!picker) return;
+    picker.innerHTML = '<div class="sl-picker-list">' +
+      sampleLibrary.map(function (s) {
+        var checked = selectedIds.indexOf(s.id) !== -1;
+        return '<label class="sl-picker-item"><input type="checkbox" value="' + s.id + '"' + (checked ? ' checked' : '') + '>' +
+          '<span>' + s.id + '</span> <span class="text-muted">' + ((s.title || s.content || '').substring(0, 30)) + '</span></label>';
+      }).join('') +
+      '</div>';
+  }
+
+  function handleSlDatasetSubmit(e) {
+    e.preventDefault();
+    var datasetId = document.getElementById('slDatasetId').value;
+    var name = document.getElementById('slDatasetName').value.trim();
+    var type = document.getElementById('slDatasetType').value;
+    if (!name) { alert('请输入数据集名称'); return; }
+
+    var sampleIds = [];
+    document.querySelectorAll('#slSamplePicker input:checked').forEach(function (cb) { sampleIds.push(cb.value); });
+
+    if (datasetId) {
+      var ds = sampleDatasets.filter(function (d) { return d.id === datasetId; })[0];
+      if (ds) { ds.name = name; ds.type = type; ds.sampleIds = sampleIds; }
+    } else {
+      sampleDatasets.push({ id: generateId('DS'), name: name, type: type, sampleIds: sampleIds, createdAt: now() });
+    }
+    saveSampleDatasets();
+    document.getElementById('slDatasetModal').style.display = 'none';
+    renderSampleDatasets();
+  }
+
+  // ── Knowledge Base ───────────────────────────────────────────────
+  function renderSampleKnowledge() {
+    var statusFilter = document.getElementById('slKbFilterStatus') ? document.getElementById('slKbFilterStatus').value : '';
+    var filtered = sampleKnowledge.slice();
+    if (statusFilter) filtered = filtered.filter(function (k) { return k.status === statusFilter; });
+
+    var tbody = document.getElementById('slKnowledgeTableBody');
+    if (filtered.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="6" class="table-empty">暂无知识块</td></tr>';
+    } else {
+      tbody.innerHTML = filtered.map(function (k) {
+        var tag = getSampleTagById(k.tagId);
+        return '<tr>' +
+          '<td><a class="link" data-action="sl-knowledge-edit" data-id="' + k.id + '" href="#">' + k.title + '</a></td>' +
+          '<td>' + (tag ? tag.name : '-') + '</td>' +
+          '<td>v' + (k.version || 1) + '</td>' +
+          '<td>' + slKnowledgeStatusBadge(k.status) + '</td>' +
+          '<td>' + formatTime(k.updatedAt) + '</td>' +
+          '<td>' +
+            '<a class="link" data-action="sl-knowledge-edit" data-id="' + k.id + '" href="#">编辑</a> ' +
+            (k.status === 'draft' ? '<a class="link" data-action="sl-knowledge-publish" data-id="' + k.id + '" href="#">发布</a> ' : '') +
+            (k.status === 'published' ? '<a class="link" data-action="sl-knowledge-rollback" data-id="' + k.id + '" href="#">回滚</a> ' : '') +
+            '<a class="link" data-action="sl-knowledge-delete" data-id="' + k.id + '" href="#">删除</a>' +
+          '</td></tr>';
+      }).join('');
+    }
+
+    // Populate tag select in modal
+    var tagSelect = document.getElementById('slKnowledgeTag');
+    if (tagSelect) {
+      tagSelect.innerHTML = '<option value="">无</option>';
+      sampleTags.filter(function (t) { return t.status === 'enabled'; }).forEach(function (t) {
+        var prefix = t.level === 1 ? '' : (t.level === 2 ? '  ' : '    ');
+        tagSelect.innerHTML += '<option value="' + t.id + '">' + prefix + t.name + '</option>';
+      });
+    }
+  }
+
+  function openSlKnowledgeModal(knowledgeId) {
+    var modal = document.getElementById('slKnowledgeModal');
+    var form = document.getElementById('slKnowledgeForm');
+    form.reset();
+
+    if (knowledgeId) {
+      var k = sampleKnowledge.filter(function (kb) { return kb.id === knowledgeId; })[0];
+      if (!k) return;
+      document.getElementById('slKnowledgeModalTitle').textContent = '编辑知识块';
+      document.getElementById('slKnowledgeId').value = k.id;
+      document.getElementById('slKnowledgeTitle').value = k.title || '';
+      document.getElementById('slKnowledgeTag').value = k.tagId || '';
+      document.getElementById('slKnowledgeContent').value = k.content || '';
+      document.getElementById('btnSlKnowledgePublish').style.display = k.status === 'draft' ? '' : 'none';
+    } else {
+      document.getElementById('slKnowledgeModalTitle').textContent = '新建知识块';
+      document.getElementById('slKnowledgeId').value = '';
+      document.getElementById('btnSlKnowledgePublish').style.display = '';
+    }
+    renderSampleKnowledge(); // refresh tag select
+    modal.style.display = 'flex';
+  }
+
+  function handleSlKnowledgeSave(statusOverride) {
+    var kId = document.getElementById('slKnowledgeId').value;
+    var title = document.getElementById('slKnowledgeTitle').value.trim();
+    var tagId = document.getElementById('slKnowledgeTag').value || null;
+    var content = document.getElementById('slKnowledgeContent').value.trim();
+    if (!title) { alert('请输入标题'); return; }
+    if (!content) { alert('请输入知识内容'); return; }
+
+    var nowStr = now();
+    if (kId) {
+      var k = sampleKnowledge.filter(function (kb) { return kb.id === kId; })[0];
+      if (k) {
+        // Save previous version if publishing
+        if (statusOverride === 'published' && k.status === 'draft') {
+          k.versions = k.versions || [];
+          k.versions.push({ title: k.title, content: k.content, tagId: k.tagId, version: k.version || 1, time: k.updatedAt || nowStr });
+          k.version = (k.version || 1) + 1;
+        }
+        k.title = title;
+        k.tagId = tagId;
+        k.content = content;
+        k.status = statusOverride || 'draft';
+        k.updatedAt = nowStr;
+      }
+    } else {
+      sampleKnowledge.push({
+        id: generateId('KN'),
+        title: title,
+        content: content,
+        tagId: tagId,
+        version: 1,
+        status: statusOverride || 'draft',
+        versions: [],
+        createdAt: nowStr,
+        updatedAt: nowStr
+      });
+    }
+    saveSampleKnowledge();
+    document.getElementById('slKnowledgeModal').style.display = 'none';
+    renderSampleKnowledge();
+  }
+
+  function handleSlKnowledgePublish(kId) {
+    var k = sampleKnowledge.filter(function (kb) { return kb.id === kId; })[0];
+    if (!k) return;
+    if (!confirm('确定发布知识块 "' + k.title + '" 吗？')) return;
+
+    // Save version and publish
+    k.versions = k.versions || [];
+    k.versions.push({ title: k.title, content: k.content, tagId: k.tagId, version: k.version || 1, time: k.updatedAt || now() });
+    k.version = (k.version || 1) + 1;
+    k.status = 'published';
+    k.updatedAt = now();
+    saveSampleKnowledge();
+    renderSampleKnowledge();
+  }
+
+  function handleSlKnowledgeRollback(kId) {
+    var k = sampleKnowledge.filter(function (kb) { return kb.id === kId; })[0];
+    if (!k || !k.versions || k.versions.length === 0) { alert('没有可回滚的版本'); return; }
+    var prev = k.versions[k.versions.length - 1];
+    if (!confirm('确定回滚到 v' + prev.version + ' 版本吗？当前内容将被替换。')) return;
+    k.title = prev.title;
+    k.content = prev.content;
+    k.tagId = prev.tagId;
+    k.version = prev.version;
+    k.status = 'published';
+    k.updatedAt = now();
+    k.versions.pop();
+    saveSampleKnowledge();
+    renderSampleKnowledge();
   }
 
   // ── Content Type Switching ─────────────────────────────────────
@@ -1036,13 +3116,7 @@
       document.getElementById('mcmMaxTokens').value = mc.max_tokens;
       document.getElementById('mcmTimeout').value = mc.timeout_seconds;
 
-      if (mc.api_key_masked) {
-        document.getElementById('mcmApiKey').value = mc.api_key_masked;
-        document.getElementById('mcmApiKeyHint').textContent = 'API Key 已保存（脱敏展示）';
-      } else {
-        document.getElementById('mcmApiKey').value = '';
-        document.getElementById('mcmApiKeyHint').textContent = 'API Key 保存后仅展示脱敏信息';
-      }
+      document.getElementById('mcmApiKey').value = apiKeysInMemory[mc.id] || '';
     } else {
       currentModelConfigId = null;
       document.getElementById('modelConfigEditTitle').textContent = '新建模型配置';
@@ -1053,7 +3127,6 @@
       document.getElementById('mcmMaxTokens').value = 1200;
       document.getElementById('mcmTimeout').value = 30;
       document.getElementById('mcmApiKey').value = '';
-      document.getElementById('mcmApiKeyHint').textContent = 'API Key 保存后仅展示脱敏信息';
     }
 
     switchMenu('model-config-edit');
@@ -1074,17 +3147,13 @@
     var temperature = parseFloat(document.getElementById('mcmTemperature').value);
     var maxTokens = parseInt(document.getElementById('mcmMaxTokens').value, 10);
     var timeout = parseInt(document.getElementById('mcmTimeout').value, 10);
+    var apiKey = (document.getElementById('mcmApiKey').value || '').trim();
 
     var errors = [];
     if (!configName) errors.push('配置名称不能为空');
     else if (configName.length < 2 || configName.length > 50) errors.push('配置名称长度必须在 2-50 个字符之间');
     if (!baseUrl) errors.push('API Base URL 不能为空');
-    // Check API Key: either in memory for this config or already masked
-    var mcId = document.getElementById('mcmId').value;
-    var existing = mcId ? getModelConfigById(mcId) : null;
-    if (!apiKeysInMemory[mcId || 'new'] && !(existing && existing.api_key_masked)) {
-      errors.push('API Key 不能为空，请先输入并保存 API Key');
-    }
+    if (!apiKey) errors.push('API Key 不能为空');
     if (!modelName) errors.push('模型名称不能为空');
     if (isNaN(temperature) || temperature < 0 || temperature > 1) errors.push('Temperature 必须在 0-1 之间');
     if (isNaN(maxTokens) || maxTokens < 256 || maxTokens > 4096) errors.push('最大输出长度必须在 256-4096 之间');
@@ -1096,7 +3165,7 @@
     }
 
     var nowStr = now();
-    var keyToUse = mcId || 'new';
+    var mcId = document.getElementById('mcmId').value;
 
     if (mcId) {
       var mc = getModelConfigById(mcId);
@@ -1110,9 +3179,8 @@
         mc.timeout_seconds = timeout;
         mc.json_mode = true;
         mc.updatedAt = nowStr;
-        if (apiKeysInMemory[mcId]) {
-          mc.api_key_masked = maskApiKey(apiKeysInMemory[mcId]);
-        }
+        apiKeysInMemory[mcId] = apiKey;
+        mc.api_key_masked = maskApiKey(apiKey);
       }
     } else {
       var newMc = Object.assign({}, DEFAULT_MODEL_CONFIG, {
@@ -1129,12 +3197,8 @@
         createdAt: nowStr,
         updatedAt: nowStr
       });
-      // Transfer API key from "new" slot to actual ID
-      if (apiKeysInMemory['new']) {
-        apiKeysInMemory[newMc.id] = apiKeysInMemory['new'];
-        delete apiKeysInMemory['new'];
-        newMc.api_key_masked = maskApiKey(apiKeysInMemory[newMc.id]);
-      }
+      apiKeysInMemory[newMc.id] = apiKey;
+      newMc.api_key_masked = maskApiKey(apiKey);
       modelConfigs.push(newMc);
     }
 
@@ -1198,47 +3262,6 @@
 
       if (testBtn) { testBtn.disabled = false; testBtn.textContent = '测试'; }
     }, delay);
-  }
-
-  // ── Model Config API Key Management ─────────────────────────────
-  function handleModelApiKeySave() {
-    var keyInput = document.getElementById('mcmApiKey');
-    var rawKey = keyInput.value.trim();
-    if (!rawKey) { alert('请输入 API Key'); return; }
-    if (rawKey.indexOf('***') !== -1) { alert('请输入完整的 API Key，而非脱敏值'); return; }
-
-    var mcId = document.getElementById('mcmId').value || 'new';
-    apiKeysInMemory[mcId] = rawKey;
-    keyInput.value = maskApiKey(rawKey);
-    document.getElementById('mcmApiKeyHint').textContent = 'API Key 已保存（脱敏展示）';
-  }
-
-  function handleModelApiKeyDelete() {
-    if (!confirm('确定要删除 API Key 吗？')) return;
-    var mcId = document.getElementById('mcmId').value || 'new';
-    delete apiKeysInMemory[mcId];
-    document.getElementById('mcmApiKey').value = '';
-    document.getElementById('mcmApiKeyHint').textContent = 'API Key 保存后仅展示脱敏信息';
-  }
-
-  function handleModelApiKeyToggle() {
-    var keyInput = document.getElementById('mcmApiKey');
-    var btn = document.getElementById('btnMcmToggleApiKey');
-    var mcId = document.getElementById('mcmId').value || 'new';
-    if (keyInput.type === 'password') {
-      if (apiKeysInMemory[mcId]) {
-        keyInput.type = 'text';
-        keyInput.value = apiKeysInMemory[mcId];
-        btn.textContent = '隐藏';
-      } else {
-        alert('完整 API Key 仅在当前会话内存中保存，刷新页面后不可查看');
-      }
-    } else {
-      keyInput.type = 'password';
-      var existing = mcId !== 'new' ? getModelConfigById(mcId) : null;
-      keyInput.value = (existing && existing.api_key_masked) || '';
-      btn.textContent = '显示';
-    }
   }
 
   // ── Prompt Template CRUD ────────────────────────────────────────
@@ -1349,26 +3372,20 @@
   }
 
   function renderPromptList() {
-    var filter = document.getElementById('filterPromptStatus').value;
-    var filtered = promptTemplates.filter(function (p) {
-      return !filter || p.status === filter;
-    });
+    var filtered = promptTemplates.slice();
     filtered.sort(function (a, b) {
       return (b.updatedAt || '').localeCompare(a.updatedAt || '');
     });
 
     var tbody = document.getElementById('promptTableBody');
     if (filtered.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="5" class="table-empty">暂无 Prompt 模板，请点击"新建 Prompt"</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="4" class="table-empty">暂无 Prompt 模板，请点击"新建 Prompt"</td></tr>';
     } else {
       tbody.innerHTML = filtered.map(function (p) {
-        var statusLabel = p.status === 'enabled' ? '已启用' : '已停用';
-        var statusCls = p.status === 'enabled' ? 'badge-pass' : 'badge-none';
         var typeLabel = p.prompt_type === 'text_audit' ? '文本审核' : p.prompt_type;
         return '<tr>' +
           '<td><strong>' + escHtml(p.prompt_name) + '</strong></td>' +
           '<td>' + typeLabel + '</td>' +
-          '<td><span class="badge ' + statusCls + '">' + statusLabel + '</span></td>' +
           '<td>' + formatTime(p.updatedAt) + '</td>' +
           '<td>' +
             '<button class="btn-link" data-edit-prompt="' + p.id + '">编辑</button> ' +
@@ -1401,7 +3418,6 @@
       document.getElementById('pmPromptName').value = p.prompt_name || '';
       document.getElementById('pmSystemPrompt').value = p.system_prompt || '';
       document.getElementById('pmUserPrompt').value = p.user_prompt || '';
-      document.getElementById('pmRemark').value = p.remark || '';
       renderParseFieldTags(getParseFieldNames(p));
     } else {
       currentPromptId = null;
@@ -1426,7 +3442,6 @@
     var promptName = (document.getElementById('pmPromptName').value || '').trim();
     var systemPrompt = (document.getElementById('pmSystemPrompt').value || '').trim();
     var userPrompt = (document.getElementById('pmUserPrompt').value || '').trim();
-    var remark = (document.getElementById('pmRemark').value || '').trim();
 
     var parseFields = getCurrentParseFieldNames();
 
@@ -1449,7 +3464,6 @@
         p.prompt_name = promptName;
         p.system_prompt = systemPrompt;
         p.user_prompt = userPrompt;
-        p.remark = remark;
         p.parse_fields = parseFields;
         p.updatedAt = nowStr;
       }
@@ -1461,7 +3475,6 @@
         system_prompt: systemPrompt,
         user_prompt: userPrompt,
         status: 'enabled',
-        remark: remark,
         parse_fields: parseFields,
         createdAt: nowStr,
         updatedAt: nowStr
@@ -1503,22 +3516,34 @@
   }
 
   // ── Cascading Model Select Helper ────────────────────────────────
-  function populateCascadingModelSelect(categorySelectId, modelSelectId) {
-    var catSelect = document.getElementById(categorySelectId);
-    var modelSelect = document.getElementById(modelSelectId);
-    var category = catSelect ? catSelect.value : '';
-    var curVal = modelSelect ? modelSelect.value : '';
+  function populateModelSelect(selectId) {
+    var modelSelect = document.getElementById(selectId);
+    if (!modelSelect) return;
+    var curVal = modelSelect.value;
 
-    var filtered = modelConfigs.filter(function (mc) {
-      if (mc.status !== 'enabled') return false;
-      if (!category) return true;
-      return mc.category === category;
-    });
+    var enabled = modelConfigs.filter(function (mc) { return mc.status === 'enabled'; });
 
-    modelSelect.innerHTML = '<option value="">请选择模型配置</option>' +
-      filtered.map(function (mc) { return '<option value="' + mc.id + '">' + escHtml(mc.config_name) + ' (' + escHtml(mc.model_name) + ')</option>'; }).join('');
+    var multimodal = enabled.filter(function (mc) { return mc.category !== 'unimodal'; });
+    var unimodal = enabled.filter(function (mc) { return mc.category === 'unimodal'; });
 
-    var found = filtered.some(function (mc) { return String(mc.id) === String(curVal); });
+    var html = '<option value="">请选择模型配置</option>';
+    if (multimodal.length > 0) {
+      html += '<optgroup label="多模态">';
+      multimodal.forEach(function (mc) {
+        html += '<option value="' + mc.id + '">' + escHtml(mc.config_name) + '（' + escHtml(mc.model_name) + '）</option>';
+      });
+      html += '</optgroup>';
+    }
+    if (unimodal.length > 0) {
+      html += '<optgroup label="单模态">';
+      unimodal.forEach(function (mc) {
+        html += '<option value="' + mc.id + '">' + escHtml(mc.config_name) + '（' + escHtml(mc.model_name) + '）</option>';
+      });
+      html += '</optgroup>';
+    }
+    modelSelect.innerHTML = html;
+
+    var found = enabled.some(function (mc) { return String(mc.id) === String(curVal); });
     if (found) modelSelect.value = curVal;
   }
 
@@ -1637,8 +3662,7 @@
     var promptSelect = document.getElementById('stPromptTemplate');
     var curPromptVal = promptSelect.value;
 
-    document.getElementById('stModelCategory').value = '';
-    populateCascadingModelSelect('stModelCategory', 'stModelConfig');
+    populateModelSelect('stModelConfig');
 
     promptSelect.innerHTML = '<option value="">请选择 Prompt 模板</option>' +
       promptTemplates.filter(function (p) { return p.status === 'enabled'; })
@@ -1765,8 +3789,7 @@
     var promptSelect = document.getElementById('btPromptTemplate');
     var curPromptVal = promptSelect.value;
 
-    document.getElementById('btModelCategory').value = '';
-    populateCascadingModelSelect('btModelCategory', 'btModelConfig');
+    populateModelSelect('btModelConfig');
 
     promptSelect.innerHTML = '<option value="">请选择 Prompt 模板</option>' +
       promptTemplates.filter(function (p) { return p.status === 'enabled'; })
@@ -2848,12 +4871,12 @@
     if (annoState.mode === 'imageMulti') {
       rows = [['图片URL', '标注标签']];
       annoState.dataset.forEach(function (item) { rows.push([item.url, (item.tags || []).join(';')]); });
-      filename = '图片分类标注.csv';
+      filename = '图片分类.csv';
       downloadAnnoCSV(rows, filename);
     } else if (annoState.mode === 'imageEval') {
       rows = [['图片URL', '机审标签', '审核状态', '不符合理由']];
       annoState.dataset.forEach(function (item) { rows.push([item.url, item.machineTag || '', item.status || '', item.reason || '']); });
-      filename = '图片合规评估.csv';
+      filename = '图片评估.csv';
       downloadAnnoCSV(rows, filename);
     }
   }
@@ -3059,9 +5082,6 @@
     // Model config edit page
     document.getElementById('modelConfigForm').addEventListener('submit', handleSaveModelConfig);
     document.getElementById('btnMcmBack').addEventListener('click', backToModelConfigList);
-    document.getElementById('btnMcmSaveApiKey').addEventListener('click', handleModelApiKeySave);
-    document.getElementById('btnMcmDeleteApiKey').addEventListener('click', handleModelApiKeyDelete);
-    document.getElementById('btnMcmToggleApiKey').addEventListener('click', handleModelApiKeyToggle);
 
     // ── Prompt Config page ─────────────────────────────────────────
     document.getElementById('btnNewPrompt').addEventListener('click', function () { openPromptEdit(null); });
@@ -3075,7 +5095,7 @@
     });
 
     // Prompt filter
-    document.getElementById('filterPromptStatus').addEventListener('change', renderPromptList);
+
 
     // Prompt edit page
     document.getElementById('promptForm').addEventListener('submit', handleSavePrompt);
@@ -3110,10 +5130,6 @@
     document.getElementById('stPromptTemplate').addEventListener('change', function () {
       renderSingleTestVarFields(this.value);
     });
-    document.getElementById('stModelCategory').addEventListener('change', function () {
-      populateCascadingModelSelect('stModelCategory', 'stModelConfig');
-    });
-
     // Content type tabs
     document.querySelectorAll('.ct-tab').forEach(function (tab) {
       tab.addEventListener('click', function () {
@@ -3250,10 +5266,6 @@
       updateBatchUploadSection(this.value);
       updateBatchTemplateHint();
     });
-    document.getElementById('btModelCategory').addEventListener('change', function () {
-      populateCascadingModelSelect('btModelCategory', 'btModelConfig');
-    });
-
     // File upload
     document.getElementById('btFileInput').addEventListener('change', function () {
       if (this.files && this.files[0]) handleBatchFileUpload(this.files[0]);
@@ -3327,6 +5339,297 @@
     document.getElementById('filterBtSearch').addEventListener('input', function () {
       renderBatchTaskList();
     });
+
+    // ── Sample Library Event Delegation ────────────────────────────
+
+    // Tag tree click delegation (toggle expand)
+    document.getElementById('slTagTree').addEventListener('click', function (e) {
+      var toggle = e.target.closest('.sl-tree-toggle');
+      if (toggle) {
+        var tagId = toggle.dataset.tagId;
+        slExpandedTagIds[tagId] = !slExpandedTagIds[tagId];
+        renderSampleTags();
+        return;
+      }
+      var menuBtn = e.target.closest('[data-sl-tag-menu]');
+      if (menuBtn) { openSlTagActionModal(menuBtn.getAttribute('data-sl-tag-menu')); return; }
+      var row = e.target.closest('.sl-tree-row');
+      if (row) showTagDetail(row.dataset.tagId);
+    });
+
+    // Tag tree search input
+    var slTagSearchEl = document.getElementById('slTagSearchInput');
+    if (slTagSearchEl) {
+      slTagSearchEl.addEventListener('input', function () { renderSampleTags(); });
+    }
+
+    // Tag panel — click delegation for tab workspace
+    document.getElementById('slTagEditPanel').addEventListener('click', function (e) {
+      var btn = e.target.closest('button, a[data-action]');
+      if (!btn) return;
+
+      // Tab switching
+      if (btn.dataset.ruleTab) { currentRuleTab = btn.dataset.ruleTab; renderTagRulePanel(currentRuleTagId); return; }
+      // Content type sub-tab
+      if (btn.dataset.ruleCt) { currentRuleContentType = btn.dataset.ruleCt; renderTagRulePanel(currentRuleTagId); return; }
+
+      // Top toolbar
+      if (btn.id === 'btnSlNewTag') { openSlRootTagModal(); return; }
+      if (btn.dataset.slPanelActions) { openSlTagActionModal(btn.dataset.slPanelActions); return; }
+      if (btn.id === 'btnRulePublish') { publishRule(); return; }
+
+      if (btn.dataset.simpleAddCond) { addSimpleCondition(btn.dataset.simpleAddCond); return; }
+      if (btn.dataset.action === 'remove-simple-cond') { removeSimpleCondition(btn); return; }
+
+      // Add conditions
+      if (btn.id === 'btnAddHitCond') { addHitCondition(); return; }
+      if (btn.id === 'btnAddExcCond') { addExcludeCondition(); return; }
+
+      // Remove conditions
+      if (btn.dataset.action === 'remove-hit-cond') { removeHitCondition(btn); return; }
+      if (btn.dataset.action === 'remove-exc-cond') { removeExcludeCondition(btn); return; }
+
+      // Case management
+      if (btn.dataset.action === 'edit-case') { openCaseModal(btn.dataset.id, null, currentRuleTagId); return; }
+      if (btn.dataset.action === 'delete-case') { deleteCase(btn.dataset.id); return; }
+      if (btn.id === 'btnAddCase') { openCaseModal(null, btn.dataset.caseType, currentRuleTagId); return; }
+
+      // Sample actions within related samples tab
+      if (btn.dataset.action === 'sl-sample-to-case') { convertSampleToCase(btn.dataset.sampleId, btn.dataset.tagId); return; }
+      if (btn.dataset.action === 'sl-view') { currentSampleId = btn.dataset.id; switchMenu('sample-detail'); return; }
+    });
+
+    // Tag panel — Enter for keyword / OCR tag chip input
+    document.getElementById('slTagEditPanel').addEventListener('keydown', function (e) {
+      if (e.key !== 'Enter') return;
+      if (e.target.id === 'slRuleKeywordInput' || e.target.id === 'slRuleOcrInput') {
+        e.preventDefault();
+        var val = e.target.value.trim();
+        if (!val) return;
+        var containerId = e.target.id === 'slRuleKeywordInput' ? 'slRuleKeywords' : 'slRuleOcrFeatures';
+        var container = document.getElementById(containerId);
+        if (container) {
+          var chip = document.createElement('span');
+          chip.className = 'sl-tag-chip';
+          chip.innerHTML = escHtml(val) + '<span class="sl-tag-chip-x">×</span>';
+          container.appendChild(chip);
+        }
+        e.target.value = '';
+      }
+    });
+
+    // Tag panel — remove keyword / OCR tag chips
+    document.getElementById('slTagEditPanel').addEventListener('click', function (e) {
+      var chipX = e.target.closest('.sl-tag-chip-x');
+      if (chipX) { chipX.parentElement.remove(); return; }
+    });
+
+    // Tag panel — level-1 category change updates level-2 dropdown
+    document.getElementById('slTagEditPanel').addEventListener('change', function (e) {
+      if (e.target.id === 'slBasicCat1') {
+        var cat2El = document.getElementById('slBasicCat2');
+        if (cat2El) {
+          var lvl2 = sampleTags.filter(function(t){return t.level===2 && t.parentId===e.target.value;});
+          cat2El.innerHTML = lvl2.length > 0 ? lvl2.map(function(t){return '<option value="'+t.id+'">'+escHtml(t.name)+'</option>';}).join('') : '<option value="">请选择二级标签</option>';
+        }
+      }
+    });
+
+    // New tag button
+    document.getElementById('btnSlNewTag').addEventListener('click', function (e) { e.stopPropagation(); openSlRootTagModal(); });
+
+    // Tag modal
+    document.getElementById('slTagForm').addEventListener('submit', handleSlTagSubmit);
+    document.getElementById('btnSlTagCancel').addEventListener('click', function () { document.getElementById('slTagModal').style.display = 'none'; });
+    document.getElementById('btnSlTagModalClose').addEventListener('click', function () { document.getElementById('slTagModal').style.display = 'none'; });
+
+    // Sample list - view/edit actions
+    document.getElementById('slSampleTableBody').addEventListener('click', function (e) {
+      var link = e.target.closest('a[data-action]');
+      if (!link) return;
+      e.preventDefault();
+      var action = link.dataset.action;
+      var id = link.dataset.id;
+      if (action === 'sl-view' || action === 'sl-edit') {
+        currentSampleId = id;
+        switchMenu('sample-detail');
+      }
+    });
+
+    // Sample list - new sample
+    document.getElementById('btnSlNewSample').addEventListener('click', function () {
+      var s = {
+        id: generateId('SAMP'),
+        title: '',
+        content: '',
+        contentType: 'text',
+        status: 'pass',
+        categoryId: 'stag_9',
+        tagIds: ['stag_9'],
+        source: 'manual',
+        usage: [],
+        reviewReason: '',
+        confidence: 0,
+        imageUrl: '',
+        auditHistory: [],
+        createdAt: now(),
+        updatedAt: now()
+      };
+      sampleLibrary.push(s);
+      saveSampleLibrary();
+      currentSampleId = s.id;
+      switchMenu('sample-detail');
+    });
+
+    // Sample list - filters
+    document.getElementById('slSearchInput').addEventListener('input', function () {
+      slListFilter.search = this.value;
+      slListPage = 1;
+      renderSampleList();
+    });
+    document.getElementById('slFilterType').addEventListener('change', function () {
+      slListFilter.contentType = this.value;
+      slListPage = 1;
+      renderSampleList();
+    });
+    document.getElementById('slFilterStatus').addEventListener('change', function () {
+      slListFilter.status = this.value;
+      slListPage = 1;
+      renderSampleList();
+    });
+    document.getElementById('slFilterCategory').addEventListener('change', function () {
+      slListFilter.categoryId = this.value;
+      slListPage = 1;
+      renderSampleList();
+    });
+
+    // Sample detail - back
+    document.getElementById('btnSlDetailBack').addEventListener('click', function () {
+      currentSampleId = null;
+      switchMenu('sample-list');
+    });
+
+    // Sample detail - content type change
+    document.getElementById('slDetailType').addEventListener('change', function () {
+      var isText = this.value === 'text';
+      document.getElementById('slDetailTextFields').style.display = isText ? '' : 'none';
+      document.getElementById('slDetailImageFields').style.display = isText ? 'none' : '';
+    });
+
+    // Sample detail - category change refreshes tag pills
+    document.getElementById('slDetailCategory').addEventListener('change', function () {
+      var currentTagIds = [];
+      document.querySelectorAll('[data-sl-tag-checkbox]:checked').forEach(function (cb) { currentTagIds.push(cb.value); });
+      // Remove tags from old category, add new category
+      currentTagIds = currentTagIds.filter(function (tid) {
+        var t = getSampleTagById(tid);
+        return t && t.parentId !== this.value;
+      }.bind(this));
+      currentTagIds.unshift(this.value);
+      renderSlTagPills(currentTagIds, this.value);
+    });
+
+    // Sample detail - tag pill clicks
+    document.getElementById('slDetailTagPills').addEventListener('change', function (e) {
+      var cb = e.target.closest('[data-sl-tag-checkbox]');
+      if (!cb) return;
+      var pill = cb.closest('.sl-tag-pill');
+      if (pill) { pill.classList.toggle('checked', cb.checked); }
+    });
+
+    // Sample detail - save
+    document.getElementById('slDetailForm').addEventListener('submit', function (e) {
+      e.preventDefault();
+      var sample = getSampleById(currentSampleId);
+      if (!sample) return;
+      var isText = document.getElementById('slDetailType').value === 'text';
+      sample.contentType = document.getElementById('slDetailType').value;
+      sample.status = document.getElementById('slDetailStatus').value;
+      sample.categoryId = document.getElementById('slDetailCategory').value;
+      sample.source = document.getElementById('slDetailSource').value;
+      sample.reviewReason = document.getElementById('slDetailReason').value.trim();
+      sample.updatedAt = now();
+
+      if (isText) {
+        sample.title = document.getElementById('slDetailTitle').value.trim();
+        sample.content = document.getElementById('slDetailText').value.trim();
+      } else {
+        sample.title = document.getElementById('slDetailImgTitle').value.trim();
+        sample.imageUrl = document.getElementById('slDetailImgUrl').value.trim();
+      }
+
+      // Collect selected tag IDs
+      var tagIds = [];
+      document.querySelectorAll('[data-sl-tag-checkbox]:checked').forEach(function (cb) { tagIds.push(cb.value); });
+      if (tagIds.indexOf(sample.categoryId) === -1) tagIds.unshift(sample.categoryId);
+      sample.tagIds = tagIds;
+
+      sample.auditHistory = sample.auditHistory || [];
+      sample.auditHistory.push({ time: now(), action: '编辑保存', detail: '状态: ' + (sample.status === 'pass' ? '通过' : sample.status === 'reject' ? '不通过' : '嫌疑') + ' | 分类: ' + (getSampleTagById(sample.categoryId) || {}).name, operator: '用户' });
+      saveSampleLibrary();
+      renderSampleDetail(currentSampleId);
+    });
+
+    // Sample detail - delete
+    document.getElementById('btnSlDelete').addEventListener('click', function () {
+      if (!confirm('确定删除该样本吗？此操作不可恢复。')) return;
+      sampleLibrary = sampleLibrary.filter(function (s) { return s.id !== currentSampleId; });
+      saveSampleLibrary();
+      currentSampleId = null;
+      switchMenu('sample-list');
+    });
+
+    // Dataset table actions
+    document.getElementById('slDatasetTableBody').addEventListener('click', function (e) {
+      var link = e.target.closest('a[data-action]');
+      if (!link) return;
+      e.preventDefault();
+      var action = link.dataset.action;
+      var id = link.dataset.id;
+      if (action === 'sl-dataset-view' || action === 'sl-dataset-edit') openSlDatasetModal(id);
+      else if (action === 'sl-dataset-delete') {
+        if (!confirm('确定删除该数据集吗？')) return;
+        sampleDatasets = sampleDatasets.filter(function (d) { return d.id !== id; });
+        saveSampleDatasets();
+        renderSampleDatasets();
+      }
+    });
+
+    // New dataset
+    document.getElementById('btnSlNewDataset').addEventListener('click', function () { openSlDatasetModal(null); });
+
+    // Dataset modal
+    document.getElementById('slDatasetForm').addEventListener('submit', handleSlDatasetSubmit);
+    document.getElementById('btnSlDatasetModalClose').addEventListener('click', function () { document.getElementById('slDatasetModal').style.display = 'none'; });
+
+    // Knowledge table actions
+    document.getElementById('slKnowledgeTableBody').addEventListener('click', function (e) {
+      var link = e.target.closest('a[data-action]');
+      if (!link) return;
+      e.preventDefault();
+      var action = link.dataset.action;
+      var id = link.dataset.id;
+      if (action === 'sl-knowledge-edit') openSlKnowledgeModal(id);
+      else if (action === 'sl-knowledge-publish') handleSlKnowledgePublish(id);
+      else if (action === 'sl-knowledge-rollback') handleSlKnowledgeRollback(id);
+      else if (action === 'sl-knowledge-delete') {
+        if (!confirm('确定删除该知识块吗？')) return;
+        sampleKnowledge = sampleKnowledge.filter(function (k) { return k.id !== id; });
+        saveSampleKnowledge();
+        renderSampleKnowledge();
+      }
+    });
+
+    // Knowledge filter
+    document.getElementById('slKbFilterStatus').addEventListener('change', renderSampleKnowledge);
+
+    // New knowledge
+    document.getElementById('btnSlNewKnowledge').addEventListener('click', function () { openSlKnowledgeModal(null); });
+
+    // Knowledge modal
+    document.getElementById('slKnowledgeForm').addEventListener('submit', function (e) { e.preventDefault(); handleSlKnowledgeSave(null); });
+    document.getElementById('btnSlKnowledgePublish').addEventListener('click', function () { handleSlKnowledgeSave('published'); });
+    document.getElementById('btnSlKnowledgeModalClose').addEventListener('click', function () { document.getElementById('slKnowledgeModal').style.display = 'none'; });
   }
 
   // ── Comment Labeling Workbench ─────────────────────────────────
@@ -3520,7 +5823,16 @@
     else commentState.currentPage = Number(target);
     commentState.currentPage = Math.max(1, Math.min(commentState.currentPage, pc));
     renderCommentCards();
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    scrollCommentPageToFirstCard();
+  }
+
+  function scrollCommentPageToFirstCard() {
+    requestAnimationFrame(function () {
+      var firstCard = document.querySelector('#commentCardContainer .comment-card-item');
+      var target = firstCard || document.getElementById('commentCardContainer');
+      if (!target) return;
+      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
   }
 
   function renderCommentCards() {
@@ -3555,10 +5867,7 @@
     var auxHtml = auxEntries.map(function (e) {
       return '<div class="comment-aux-box"><div class="comment-field-label">' + escComment(e[0]) + '</div><div class="comment-field-value">' + escComment(e[1]) + '</div></div>';
     }).join('');
-    var placeholders = '';
-    for (var i = auxEntries.length; i < 3; i++) {
-      placeholders += '<div class="comment-aux-placeholder">辅助字段为空</div>';
-    }
+    var hasAux = auxEntries.length > 0;
 
     var labelBtns = commentState.tags.map(function (tag) {
       return '<button class="comment-label-btn' + (row.label === tag ? ' active' : '') + '" data-comment-label="' + row.id + '|' + escComment(tag) + '">' + escComment(tag) + '</button>';
@@ -3571,12 +5880,12 @@
         + '<span class="comment-card-index' + (isLabeled ? ' is-labeled' : '') + '">第 ' + row.index + ' 条' + (row.label ? ' · 已标注：' + escComment(row.label) : ' · 未标注') + '</span>'
         + '<button class="btn btn-sm btn-secondary" data-comment-clear="' + row.id + '">清空标注</button>'
       + '</div>'
-      + '<div class="comment-card-body">'
+      + '<div class="comment-card-body' + (hasAux ? '' : ' no-aux') + '">'
         + '<div class="comment-main-col">'
           + '<div class="comment-field-box title-box"><div class="comment-field-label">标题</div><div class="comment-field-value">' + escComment(row.title || '未填写标题') + '</div></div>'
           + '<div class="comment-field-box comment-box"><div class="comment-field-label">评论</div><div class="comment-field-value">' + escComment(row.comment || '未填写评论') + '</div></div>'
         + '</div>'
-        + '<div class="comment-aux-col">' + (auxHtml + placeholders || '<div class="comment-aux-placeholder">无辅助信息</div>') + '</div>'
+        + (hasAux ? '<div class="comment-aux-col">' + auxHtml + '</div>' : '')
       + '</div>'
       + '<div class="comment-annotation-row">'
         + '<div class="comment-label-choices">' + (labelBtns || '<span style="color:var(--text-muted);font-size:13px;">请先在标签管理中添加标签</span>') + '</div>'
@@ -3732,6 +6041,13 @@
     loadModelConfigs();
     loadPromptTemplates();
     loadBatchTasks();
+    loadSampleLibrary();
+    loadSampleTags();
+    loadSampleDatasets();
+    loadSampleKnowledge();
+    loadLabelRules();
+    loadLabelCases();
+    loadLabelVersions();
     updateContentTypeUI();
     renderRuleTable();
     renderHistoryTable();
@@ -3750,6 +6066,17 @@
       if (!rule.updatedAt) { rule.updatedAt = nowStr; rulesUpdated = true; }
     });
     if (rulesUpdated) { saveRules(); }
+
+    // Init default sample tags if empty
+    if (!sampleTags.length) {
+      sampleTags = DEFAULT_SAMPLE_TAGS.map(function (t) { return Object.assign({}, t); });
+      saveSampleTags();
+    }
+
+    // Init demo samples if library is empty
+    if (!sampleLibrary.length) {
+      initDemoSamples();
+    }
   }
 
   // ── Bootstrap ──────────────────────────────────────────────────

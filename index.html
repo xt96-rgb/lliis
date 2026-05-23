@@ -69,6 +69,18 @@
             <span class="sub-item-dot"></span>批量检测
           </a>
         </div>
+
+        <a class="menu-item menu-parent" data-menu="sample-library" aria-expanded="false">
+          <span class="menu-icon">&#128218;</span>
+          <span>&#20869;&#23481;&#26679;&#26412;&#24211;</span>
+          <span class="menu-arrow">&#9662;</span>
+        </a>
+        <div class="menu-sub-items">
+          <a class="menu-sub-item" data-menu="sample-dashboard"><span class="sub-item-dot"></span>&#35268;&#21017;&#31649;&#29702;</a>
+          <a class="menu-sub-item" data-menu="sample-list"><span class="sub-item-dot"></span>&#26679;&#26412;&#21015;&#34920;</a>
+          <a class="menu-sub-item" data-menu="sample-datasets"><span class="sub-item-dot"></span>&#25968;&#25454;&#38598;&#31649;&#29702;</a>
+          <a class="menu-sub-item" data-menu="sample-knowledge"><span class="sub-item-dot"></span>&#30693;&#35782;&#24211;</a>
+        </div>
         <a class="menu-item menu-parent" data-menu="annotation" aria-expanded="false">
           <span class="menu-icon">&#9998;</span>
           <span>数据标注</span>
@@ -76,13 +88,13 @@
         </a>
         <div class="menu-sub-items">
           <a class="menu-sub-item" data-menu="annotation-image-multi">
-            <span class="sub-item-dot"></span>图片标注
+            <span class="sub-item-dot"></span>图片分类
           </a>
           <a class="menu-sub-item" data-menu="annotation-image-eval">
             <span class="sub-item-dot"></span>图片评估
           </a>
           <a class="menu-sub-item" data-menu="annotation-comment">
-            <span class="sub-item-dot"></span>评论标注
+            <span class="sub-item-dot"></span>&#35780;&#35770;&#26631;&#27880;
           </a>
         </div>
       </nav>
@@ -303,16 +315,9 @@
         <div class="list-page-header">
           <div>
             <h2 class="card-title">提示词配置</h2>
-            <p class="card-desc">管理审核 Prompt 模板，支持多套模板、独立启用/停用。</p>
+            <p class="card-desc">管理审核 Prompt 模板，支持多套模板。</p>
           </div>
           <button class="btn btn-primary" id="btnNewPrompt">新建 Prompt</button>
-        </div>
-        <div class="filter-bar">
-          <select id="filterPromptStatus" class="form-select filter-select">
-            <option value="">全部状态</option>
-            <option value="enabled">已启用</option>
-            <option value="disabled">已停用</option>
-          </select>
         </div>
         <div class="table-wrap">
           <table class="table" id="promptTable">
@@ -320,13 +325,12 @@
               <tr>
                 <th>Prompt 名称</th>
                 <th>Prompt 类型</th>
-                <th>状态</th>
                 <th>更新时间</th>
                 <th>操作</th>
               </tr>
             </thead>
             <tbody id="promptTableBody">
-              <tr><td colspan="5" class="table-empty">暂无 Prompt 模板，请点击"新建 Prompt"</td></tr>
+              <tr><td colspan="4" class="table-empty">暂无 Prompt 模板，请点击"新建 Prompt"</td></tr>
             </tbody>
           </table>
         </div>
@@ -545,15 +549,9 @@
         </div>
         <form id="promptForm">
           <input type="hidden" id="pmId">
-          <div class="form-row">
-            <div class="form-group">
-              <label class="form-label" for="pmPromptName">Prompt 名称 <span class="required">*</span></label>
-              <input type="text" id="pmPromptName" class="form-input" placeholder="例如：通用文本审核 Prompt" maxlength="50">
-            </div>
-            <div class="form-group">
-              <label class="form-label" for="pmRemark">建议</label>
-              <input type="text" id="pmRemark" class="form-input" placeholder="使用建议（选填）" maxlength="200">
-            </div>
+          <div class="form-group">
+            <label class="form-label" for="pmPromptName">Prompt 名称 <span class="required">*</span></label>
+            <input type="text" id="pmPromptName" class="form-input" placeholder="例如：通用文本审核 Prompt" maxlength="50">
           </div>
           <div class="form-group">
             <label class="form-label" for="pmPromptType">Prompt 类型 <span class="required">*</span></label>
@@ -563,20 +561,20 @@
             <span class="form-hint">当前仅支持文本审核</span>
           </div>
           <div class="form-group">
-            <label class="form-label">解析字段</label>
-            <p class="form-hint" style="margin-bottom:8px;">定义 Prompt 返回 JSON 的字段名，用于单条测试和批量检测的结果展示。双击字段名可编辑，可为空，为空时仅展示原始结果。</p>
-            <div class="pf-tag-editor" id="pfTagEditor"></div>
-          </div>
-          <div class="form-group">
             <label class="form-label" for="pmSystemPrompt">System Prompt <span class="required">*</span></label>
             <textarea id="pmSystemPrompt" class="form-textarea prompt-textarea" rows="12" placeholder="请输入 System Prompt"></textarea>
           </div>
           <div class="form-group">
             <label class="form-label" for="pmUserPrompt">User Prompt <span class="required">*</span></label>
             <textarea id="pmUserPrompt" class="form-textarea prompt-textarea" rows="6" placeholder="请输入 User Prompt 模板"></textarea>
-            <div class="var-tags" id="promptVarTags" style="margin-top:6px;">
-              <span class="form-hint">可用变量：</span>
-            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">解析字段</label>
+            <p class="form-hint" style="margin-bottom:8px;">定义 Prompt 返回 JSON 的字段名，用于单条测试和批量检测的结果展示。双击字段名可编辑，可为空，为空时仅展示原始结果。</p>
+            <div class="pf-tag-editor" id="pfTagEditor"></div>
+          </div>
+          <div class="var-tags-wrap" id="promptVarTags" style="margin-bottom:8px;">
+            <span class="form-hint">可用变量：</span>
           </div>
           <div class="form-actions">
             <button type="submit" class="btn btn-primary" id="btnPmSubmit">保存</button>
@@ -723,7 +721,7 @@
     ============================================================ -->
     <section class="tab-content" id="tab-annotation">
       <div class="card annotation-card">
-        <h2 class="card-title" id="annoPageTitle">图片分类标注</h2>
+        <h2 class="card-title" id="annoPageTitle">图片分类</h2>
         <p class="card-desc" id="annoPageDesc">对图片进行多标签分类标注，支持自定义标签库管理</p>
 
         <!-- 标签管理区 -->
@@ -757,66 +755,6 @@
       </div>
     </section>
 
-    <!-- ============================================================
-       评论标注工作台
-    ============================================================ -->
-    <section class="tab-content" id="tab-annotation-comment">
-      <div class="card annotation-card">
-        <h2 class="card-title">评论标注</h2>
-        <p class="card-desc">上传 Excel 后以卡片方式逐条打标签，支持自定义标签库管理</p>
-
-        <!-- 标签管理区 -->
-        <div class="anno-tag-manager" id="commentTagManager">
-          <div class="anno-tag-input-row">
-            <input type="text" id="commentTagInput" class="form-input" placeholder="输入新标签，如 色情" style="flex:1;">
-            <button class="btn btn-primary btn-sm" id="commentAddTagBtn">添加标签</button>
-          </div>
-          <div class="anno-tag-list" id="commentTagList"></div>
-        </div>
-
-        <!-- 工具栏 -->
-        <div class="filter-bar" style="flex-wrap:wrap;">
-          <button class="btn btn-secondary btn-sm" id="commentDownloadTemplateBtn">下载模板</button>
-          <label class="btn btn-primary btn-sm">
-            上传 Excel
-            <input id="commentFileInput" type="file" accept=".xlsx,.xls" style="display:none;">
-          </label>
-          <button class="btn btn-primary btn-sm" id="commentExportBtn">导出结果</button>
-          <button class="btn btn-danger btn-sm" id="commentClearBtn">清空数据</button>
-        </div>
-
-        <!-- 状态栏 -->
-        <div class="anno-status-bar">
-          <span>文件：<span id="commentFileName">尚未上传文件</span></span>
-          <span>总量：<b id="commentTotalCount">0</b></span>
-          <span>已标注：<b id="commentLabeledCount">0</b></span>
-          <span id="commentUnlabeledWrap" style="cursor:pointer;" title="点击跳转到下一条未标注评论">未标注：<b id="commentUnlabeledCount">0</b></span>
-        </div>
-
-        <!-- 筛选区 -->
-        <div class="filter-bar">
-          <input type="text" id="commentSearchInput" class="form-input filter-input" placeholder="搜索标题、评论或辅助字段" style="max-width:260px;">
-          <select id="commentStatusFilter" class="form-select filter-select">
-            <option value="all">全部状态</option>
-            <option value="labeled">已标注</option>
-            <option value="unlabeled">未标注</option>
-          </select>
-          <select id="commentTagFilter" class="form-select filter-select">
-            <option value="all">全部标签</option>
-          </select>
-        </div>
-
-        <!-- 分页（上） -->
-        <div id="commentTopPagination" class="batch-pagination" style="display:none;"></div>
-
-        <!-- 卡片容器 -->
-        <div id="commentCardContainer"></div>
-
-        <!-- 分页（下） -->
-        <div id="commentBottomPagination" class="batch-pagination" style="display:none;"></div>
-      </div>
-    </section>
-
     <!-- 批量检测 - 任务详情页 -->
     <section class="tab-content" id="tab-batch-test-detail">
       <div class="card">
@@ -830,8 +768,117 @@
         <div id="btDetailContent"></div>
       </div>
     </section>
+
+    <!-- Page: Rule Management -->
+    <section class="tab-content" id="tab-sample-dashboard">
+      <div class="card">
+        <div class="list-page-header">
+          <div>
+            <h2 class="card-title">&#35268;&#21017;&#31649;&#29702;</h2>
+            <p class="card-desc">&#32500;&#25252;&#20869;&#23481;&#20998;&#31867;&#26631;&#31614;&#21644;&#19977;&#32423;&#35268;&#21017;&#37197;&#32622;</p>
+          </div>
+        </div>
+        <div class="sl-tag-tree-container">
+          <div class="sl-tag-tree-left">
+            <div class="sl-tag-search-wrap"><input type="text" id="slTagSearchInput" class="form-input sl-tag-search" placeholder="&#25628;&#32034;&#26631;&#31614;&#21517;&#31216;&#25110;&#32534;&#30721;..."></div>
+            <div id="slTagTree" class="sl-tag-tree"></div>
+            <div class="sl-tag-tree-footer"><button class="btn btn-primary sl-tag-tree-btn" id="btnSlNewTag" type="button">&#26032;&#22686;&#19968;&#32423;&#26631;&#31614;</button></div>
+          </div>
+          <div class="sl-tag-edit-panel" id="slTagEditPanel"><div class="sl-tag-empty-state"><h3 class="sl-tag-edit-title">&#36873;&#25321;&#26631;&#31614;&#26597;&#30475;&#25110;&#32534;&#36753;</h3><p class="form-hint">&#28857;&#20987;&#24038;&#20391;&#26631;&#31614;&#33410;&#28857;&#26597;&#30475;&#35814;&#24773;&#65292;&#19977;&#32423;&#26631;&#31614;&#21487;&#32534;&#36753;&#35268;&#21017;&#12290;</p></div></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="tab-content" id="tab-sample-list"><div class="card"><div class="list-page-header"><div><h2 class="card-title">&#26679;&#26412;&#21015;&#34920;</h2><p class="card-desc">&#31649;&#29702;&#25991;&#26412;&#21644;&#22270;&#29255;&#26679;&#26412;</p></div><button class="btn btn-primary" id="btnSlNewSample">&#26032;&#22686;&#26679;&#26412;</button></div><div class="filter-bar"><input type="text" id="slSearchInput" class="form-input filter-input" placeholder="???????..."><select id="slFilterType" class="form-select filter-select"><option value="">????</option><option value="text">??</option><option value="image">??</option></select><select id="slFilterStatus" class="form-select filter-select"><option value="">????</option><option value="pass">??</option><option value="reject">???</option><option value="suspect">??</option></select><select id="slFilterCategory" class="form-select filter-select"><option value="">????</option></select></div><div class="table-wrap"><table class="table" id="slSampleTable"><thead><tr><th>??ID</th><th>????</th><th>??</th><th>??</th><th>??</th><th>??</th><th>????</th><th>??</th></tr></thead><tbody id="slSampleTableBody"><tr><td colspan="8" class="table-empty">??????</td></tr></tbody></table></div><div class="table-footer" style="display:flex;justify-content:space-between;align-items:center;"><span id="slSampleCount">? 0 ?</span><div id="slListPagination" class="batch-pagination" style="margin-top:0;"></div></div></div></section>
+
+    <section class="tab-content" id="tab-sample-detail"><div class="card"><div class="card-header"><div style="display:flex;align-items:center;gap:12px;"><button type="button" class="btn btn-secondary" id="btnSlDetailBack">????</button><h2 class="card-title" id="slDetailPageTitle">????</h2></div><button class="btn btn-danger btn-sm" id="btnSlDelete" style="display:none;">????</button></div><div class="sl-detail-grid"><div class="sl-detail-left"><div id="slDetailContent" class="sl-content-display"></div></div><div class="sl-detail-right"><form id="slDetailForm"><input type="hidden" id="slDetailId"><div class="form-group"><label class="form-label" for="slDetailType">????</label><select id="slDetailType" class="form-select"><option value="text">??</option><option value="image">??</option></select></div><div class="form-group"><label class="form-label" for="slDetailStatus">????</label><select id="slDetailStatus" class="form-select"><option value="pass">??</option><option value="reject">???</option><option value="suspect">??</option></select></div><div class="form-group"><label class="form-label" for="slDetailCategory">???</label><select id="slDetailCategory" class="form-select"></select></div><div class="form-group"><label class="form-label">??</label><div id="slDetailTagPills" class="sl-tag-pills"></div></div><div class="form-group"><label class="form-label" for="slDetailSource">????</label><select id="slDetailSource" class="form-select"><option value="manual">????</option><option value="online_recall">????</option><option value="model_miss">????</option><option value="user_feedback">????</option><option value="red_team">????</option></select></div><div id="slDetailTextFields"><div class="form-group"><label class="form-label" for="slDetailTitle">??</label><input type="text" id="slDetailTitle" class="form-input"></div><div class="form-group"><label class="form-label" for="slDetailText">????</label><textarea id="slDetailText" class="form-textarea" rows="6"></textarea></div></div><div id="slDetailImageFields" style="display:none;"><div class="form-group"><label class="form-label" for="slDetailImgTitle">????</label><input type="text" id="slDetailImgTitle" class="form-input"></div><div class="form-group"><label class="form-label" for="slDetailImgUrl">??URL</label><input type="text" id="slDetailImgUrl" class="form-input"></div></div><div class="form-group"><label class="form-label" for="slDetailReason">????</label><textarea id="slDetailReason" class="form-textarea" rows="3"></textarea></div><div class="form-actions"><button type="submit" class="btn btn-primary" id="btnSlDetailSave">??</button></div></form></div></div><div id="slDetailHistory" style="margin-top:20px;"></div></div></section>
+
+    <section class="tab-content" id="tab-sample-datasets"><div class="card"><div class="list-page-header"><div><h2 class="card-title">?????</h2><p class="card-desc">????????</p></div><button class="btn btn-primary" id="btnSlNewDataset">?????</button></div><div class="table-wrap"><table class="table"><thead><tr><th>?????</th><th>??</th><th>????</th><th>????</th><th>??</th></tr></thead><tbody id="slDatasetTableBody"><tr><td colspan="5" class="table-empty">?????</td></tr></tbody></table></div></div></section>
+
+    <section class="tab-content" id="tab-sample-knowledge"><div class="card"><div class="list-page-header"><div><h2 class="card-title">???</h2><p class="card-desc">???????</p></div><button class="btn btn-primary" id="btnSlNewKnowledge">?????</button></div><div class="filter-bar"><select id="slKbFilterStatus" class="form-select filter-select"><option value="">????</option><option value="draft">??</option><option value="published">???</option><option value="archived">???</option></select></div><div class="table-wrap"><table class="table"><thead><tr><th>??</th><th>??</th><th>??</th><th>????</th><th>??</th></tr></thead><tbody id="slKnowledgeTableBody"><tr><td colspan="5" class="table-empty">?????</td></tr></tbody></table></div></div></section>
+
+
+    <section class="tab-content" id="tab-annotation-comment">
+      <div class="card comment-workbench">
+        <div class="list-page-header comment-page-header">
+          <div>
+            <h2 class="card-title">&#35780;&#35770;&#26631;&#27880;</h2>
+            <p class="card-desc">&#23548;&#20837; Excel &#35780;&#35770;&#25968;&#25454;&#65292;&#25353;&#33258;&#23450;&#20041;&#26631;&#31614;&#36827;&#34892;&#20154;&#24037;&#26631;&#27880;</p>
+          </div>
+          <div class="comment-header-actions">
+            <button type="button" class="btn btn-secondary" id="commentDownloadTemplateBtn">&#19979;&#36733;&#27169;&#26495;</button>
+            <button type="button" class="btn btn-primary" id="commentExportBtn">&#23548;&#20986;&#32467;&#26524;</button>
+            <button type="button" class="btn btn-danger" id="commentClearBtn">&#28165;&#31354;&#25968;&#25454;</button>
+          </div>
+        </div>
+
+        <div class="comment-control-grid">
+          <div class="comment-panel comment-tag-panel">
+            <div class="comment-panel-title">&#26631;&#31614;&#31649;&#29702;</div>
+            <div class="comment-tag-input-row">
+              <input type="text" id="commentTagInput" class="form-input" placeholder="&#36755;&#20837;&#26631;&#31614;&#21517;&#31216;">
+              <button type="button" class="btn btn-primary btn-sm" id="commentAddTagBtn">&#28155;&#21152;</button>
+            </div>
+            <div class="anno-tag-list comment-tag-list" id="commentTagList"></div>
+          </div>
+
+          <div class="comment-panel comment-import-panel">
+            <div class="comment-panel-title">&#25968;&#25454;&#23548;&#20837;</div>
+            <div class="comment-file-row">
+              <input type="file" id="commentFileInput" class="file-input" accept=".xlsx,.xls">
+              <label for="commentFileInput" class="file-label">&#36873;&#25321; Excel &#25991;&#20214;</label>
+              <span class="file-hint" id="commentFileName">&#23578;&#26410;&#19978;&#20256;&#25991;&#20214;</span>
+            </div>
+            <div class="comment-stats">
+              <div class="comment-stat-card"><span>&#24635;&#25968;</span><strong id="commentTotalCount">0</strong></div>
+              <div class="comment-stat-card"><span>&#24050;&#26631;&#27880;</span><strong id="commentLabeledCount">0</strong></div>
+              <button type="button" class="comment-stat-card comment-stat-action" id="commentUnlabeledWrap">
+                <span>&#26410;&#26631;&#27880;</span><strong id="commentUnlabeledCount">0</strong>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="filter-bar comment-filter-bar">
+          <input type="text" id="commentSearchInput" class="form-input filter-input" placeholder="&#25628;&#32034;&#26631;&#39064;&#12289;&#35780;&#35770;&#25110;&#36741;&#21161;&#20449;&#24687;">
+          <select id="commentStatusFilter" class="form-select filter-select">
+            <option value="all">&#20840;&#37096;&#29366;&#24577;</option>
+            <option value="labeled">&#24050;&#26631;&#27880;</option>
+            <option value="unlabeled">&#26410;&#26631;&#27880;</option>
+          </select>
+          <select id="commentTagFilter" class="form-select filter-select">
+            <option value="all">&#20840;&#37096;&#26631;&#31614;</option>
+          </select>
+        </div>
+
+        <div id="commentTopPagination" class="batch-pagination comment-pagination"></div>
+        <div id="commentCardContainer"></div>
+        <div id="commentBottomPagination" class="batch-pagination comment-pagination"></div>
+      </div>
+    </section>
+
     </main>
   </div>
+
+
+  <!-- Tag Edit Modal -->
+  <div class="modal-overlay" id="slTagModal" style="display:none;">
+    <div class="modal"><div class="modal-header"><h3 id="slTagModalTitle">????</h3><button class="modal-close" id="btnSlTagModalClose">&times;</button></div>
+      <form id="slTagForm"><input type="hidden" id="slTagId"><input type="hidden" id="slTagParentId"><input type="hidden" id="slTagLevel">
+        <div class="form-group"><label class="form-label" for="slTagName">???? <span class="required">*</span></label><input type="text" id="slTagName" class="form-input" maxlength="50"></div>
+        <div class="form-group"><label class="form-label" for="slTagDesc">????</label><textarea id="slTagDesc" class="form-textarea" rows="3"></textarea></div>
+        <div class="form-row"><div class="form-group"><label class="form-label" for="slTagPositive">????</label><textarea id="slTagPositive" class="form-textarea" rows="3"></textarea></div><div class="form-group"><label class="form-label" for="slTagNegative">????</label><textarea id="slTagNegative" class="form-textarea" rows="3"></textarea></div></div>
+        <div class="form-row"><div class="form-group"><label class="form-label" for="slTagAppType">??????</label><select id="slTagAppType" class="form-select"><option value="all">??</option><option value="text">??</option><option value="image">??</option></select></div><div class="form-group"><label class="form-label" for="slTagStatus">??</label><select id="slTagStatus" class="form-select"><option value="draft">??</option><option value="active">???</option><option value="disabled">???</option></select></div></div>
+        <div class="form-actions"><button type="submit" class="btn btn-primary" id="btnSlTagSubmit">??</button><button type="button" class="btn btn-secondary" id="btnSlTagCancel">??</button></div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Dataset Modal -->
+  <div class="modal-overlay" id="slDatasetModal" style="display:none;"><div class="modal"><div class="modal-header"><h3 id="slDatasetModalTitle">?????</h3><button class="modal-close" id="btnSlDatasetModalClose">&times;</button></div><form id="slDatasetForm"><input type="hidden" id="slDatasetId"><div class="form-group"><label class="form-label" for="slDatasetName">?????</label><input type="text" id="slDatasetName" class="form-input"></div><div class="form-group"><label class="form-label" for="slDatasetType">?????</label><select id="slDatasetType" class="form-select"><option value="training">???</option><option value="test">???</option><option value="validation">???</option><option value="hard_case">???</option><option value="regression">???</option><option value="rag">RAG???</option></select></div><div id="slSamplePicker" class="sl-sample-picker"></div><div class="form-actions"><button type="submit" class="btn btn-primary">??</button></div></form></div></div>
+
+  <!-- Knowledge Modal -->
+  <div class="modal-overlay" id="slKnowledgeModal" style="display:none;"><div class="modal"><div class="modal-header"><h3 id="slKnowledgeModalTitle">?????</h3><button class="modal-close" id="btnSlKnowledgeModalClose">&times;</button></div><form id="slKnowledgeForm"><input type="hidden" id="slKnowledgeId"><div class="form-group"><label class="form-label" for="slKnowledgeTitle">??</label><input type="text" id="slKnowledgeTitle" class="form-input"></div><div class="form-group"><label class="form-label" for="slKnowledgeTag">??</label><select id="slKnowledgeTag" class="form-select"></select></div><div class="form-group"><label class="form-label" for="slKnowledgeContent">??</label><textarea id="slKnowledgeContent" class="form-textarea" rows="6"></textarea></div><div class="form-actions"><button type="submit" class="btn btn-primary">????</button><button type="button" class="btn btn-success" id="btnSlKnowledgePublish">??</button></div></form></div></div>
 
   <!-- Rule Edit Modal -->
   <div class="modal-overlay" id="ruleModal" style="display:none">
