@@ -121,6 +121,7 @@
   let sampleKnowledge = [];
   let currentSampleId = null;
   let slExpandedTagIds = {};
+  let slExpandedL3CardId = null;  // currently expanded L3 card in accordion (only one at a time)
   let slListPage = 1;
   let slListFilter = {};
   let labelRules = [];
@@ -1087,7 +1088,8 @@
     }
 
     function renderTagRow(tag) {
-      var children = getSampleChildTags(tag.id);
+      // Only expand level-1 → level-2; hide level-3 in left tree
+      var children = tag.level < 2 ? getSampleChildTags(tag.id) : [];
       var hasChildren = children.length > 0;
       var expanded = searchTerm ? true : !!slExpandedTagIds[tag.id];
       var tagCount = getSampleThirdLevelTagCount(tag.id);
@@ -1141,8 +1143,19 @@
       var activeRow = tree.querySelector('.sl-tree-row[data-tag-id="' + tagId + '"]');
       if (activeRow) activeRow.classList.add('sl-tree-row--active');
     }
-    if (tag.level < 3) {
+    if (tag.level === 1) {
+      slExpandedTagIds[tagId] = !slExpandedTagIds[tagId];
+      renderSampleTags();
+      if (tree) {
+        var activeRow2 = tree.querySelector('.sl-tree-row[data-tag-id="' + tagId + '"]');
+        if (activeRow2) activeRow2.classList.add('sl-tree-row--active');
+      }
       renderTagSummaryPanel(tagId);
+      return;
+    }
+    if (tag.level === 2) {
+      slExpandedL3CardId = null;
+      renderL2ChildrenAccordion(tagId);
       return;
     }
     currentRuleTab = 'basic';
@@ -1180,18 +1193,59 @@
     var panel = document.getElementById('slTagEditPanel');
     if (!panel) return;
     if (!tag || tag.level < 3) {
-      panel.innerHTML = '<h3 class="sl-tag-edit-title">&#36873;&#25321;&#19977;&#32423;&#26631;&#31614;</h3><p class="form-hint">&#28857;&#20987;&#24038;&#20391;&#19977;&#32423;&#26631;&#31614;&#26597;&#30475;&#21644;&#32534;&#36753;&#35268;&#21017;</p>';
+      panel.innerHTML = '<h3 class="sl-tag-edit-title">&#36873;&#25321;&#19977;&#32423;&#26631;&#31614;</h3><p class="form-hint">&#28857;&#20987;&#24038;&#20391;&#20108;&#32423;&#26631;&#31614;&#26597;&#30475;&#21644;&#32534;&#36753;&#19977;&#32423;&#35268;&#21017;</p>';
       return;
     }
     currentRuleTagId = tagId;
 
-    var html = '';
-    html += '<div class="sl-rule-toolbar">';
+    var html = '<div class="sl-rule-toolbar">';
     html += '<div class="sl-rule-breadcrumb">' + renderRuleBreadcrumb(tag) + '</div>';
     html += '<div class="sl-rule-toolbar-actions">';
     html += '<button class="btn btn-success btn-sm" id="btnRulePublish">&#20445;&#23384;&#24182;&#21457;&#24067;</button>';
     html += '</div></div>';
     html += renderUnifiedRuleEditor(tag);
+    panel.innerHTML = html;
+  }
+
+  // ── Level-2 Children Accordion (expandable L3 cards) ─────────
+  function renderL2ChildrenAccordion(tagId) {
+    var tag = getSampleTagById(tagId);
+    var panel = document.getElementById('slTagEditPanel');
+    if (!tag || !panel) return;
+    currentRuleTagId = tagId;
+
+    var l3Children = getSampleChildTags(tag.id);
+    var html = '<div class="sl-rule-toolbar">';
+    html += '<div class="sl-rule-breadcrumb">' + renderRuleBreadcrumb(tag) + '</div>';
+    html += '<div class="sl-rule-toolbar-actions">';
+    html += '<button class="btn btn-secondary btn-sm" data-sl-panel-actions="' + tag.id + '">标签操作</button>';
+    html += '</div></div>';
+
+    if (l3Children.length === 0) {
+      html += '<div class="sl-l3-empty"><p>该二级标签下暂无三级标签，请先添加三级子标签。</p></div>';
+    } else {
+      html += '<div class="sl-l3-accordion">';
+      l3Children.forEach(function(child) {
+        var isExpanded = slExpandedL3CardId === child.id;
+        html += '<div class="sl-l3-card' + (isExpanded ? ' sl-l3-card--expanded' : '') + '" data-l3-card="' + child.id + '">';
+        html += '<div class="sl-l3-card-header" data-l3-toggle="' + child.id + '">';
+        html += '<span class="sl-l3-card-arrow">' + (isExpanded ? '▾' : '▸') + '</span>';
+        html += '<span class="sl-l3-card-name">' + escHtml(child.name) + '</span>';
+        html += '<span class="sl-l3-card-code">' + escHtml(child.code || '') + '</span>';
+        html += '</div>';
+        if (isExpanded) {
+          currentRuleTagId = child.id;
+          html += '<div class="sl-l3-card-body">';
+          html += renderUnifiedRuleEditor(child);
+          html += '<div class="form-actions" style="padding:12px 0 0 0;">';
+          html += '<button class="btn btn-success btn-sm" id="btnRulePublish">保存并发布</button>';
+          html += '</div>';
+          html += '</div>';
+        }
+        html += '</div>';
+      });
+      html += '</div>';
+    }
     panel.innerHTML = html;
   }
 
@@ -1220,15 +1274,17 @@
     }
 
     var html = '<div class="sl-basic-form">';
-    // Name + Code
-    html += '<div class="form-row"><div class="form-group">';
-    html += '<label class="form-label">三级标签名称 <span class="required">*</span></label>';
+    // Row 1: Name + Value + Description (matches modal order)
+    html += '<div class="form-row form-row-tag"><div class="form-group">';
+    html += '<label class="form-label">标签名称 <span class="required">*</span></label>';
     html += '<input type="text" id="slBasicName" class="form-input" value="' + escHtml(tag.name) + '" maxlength="50">';
     html += '</div><div class="form-group">';
-    html += '<label class="form-label">标签编码 <span class="required">*</span></label>';
-    html += '<input type="text" id="slBasicCode" class="form-input" value="' + escHtml(tag.code || '') + '" maxlength="50">';
+    html += '<label class="form-label">标签值 <span class="required">*</span></label>';
+    html += '<input type="text" id="slBasicCode" class="form-input" value="' + escHtml(tag.code || '') + '" maxlength="80">';
+    html += '</div><div class="form-group">';
+    html += '<label class="form-label">标签说明 <span class="required">*</span></label>';
+    html += '<input type="text" id="slBasicDesc" class="form-input" value="' + escHtml(tag.description || '') + '" maxlength="200" placeholder="请输入标签说明">';
     html += '</div></div>';
-
     // Category (level-1 + level-2)
     html += '<div class="form-row"><div class="form-group">';
     html += '<label class="form-label">所属一级分类 <span class="required">*</span></label>';
@@ -1266,12 +1322,6 @@
       html += '<label class="checkbox-label"><input type="radio" name="slBasicRiskLevel" value="'+v+'"'+(tag.riskLevel===v?' checked':'')+'> '+labels[v]+'</label>';
     });
     html += '</div></div></div>';
-
-    // Description
-    html += '<div class="form-group">';
-    html += '<label class="form-label">标签说明 <span class="required">*</span></label>';
-    html += '<textarea id="slBasicDesc" class="form-textarea" rows="3" style="min-height:72px;">' + escHtml(tag.description || '') + '</textarea>';
-    html += '</div>';
 
     // Status display + owner
     html += '<div class="form-row"><div class="form-group">';
@@ -1482,14 +1532,16 @@
     var html = '<div class="sl-unified-rule-editor">';
     html += '<section class="sl-unified-section">';
     html += '<h4 class="sl-unified-title">&#22522;&#30784;&#20449;&#24687;</h4>';
-    html += '<div class="form-row"><div class="form-group">';
-    html += '<label class="form-label" for="slBasicCode">&#26631;&#31614;&#32534;&#30721; <span class="required">*</span></label>';
-    html += '<input type="text" id="slBasicCode" class="form-input" value="' + escHtml(tag.code || '') + '" maxlength="50">';
-    html += '</div></div>';
-    html += '<div class="form-group">';
+    html += '<div class="form-row form-row-tag"><div class="form-group">';
+    html += '<label class="form-label" for="slBasicName">&#26631;&#31614;&#21517;&#31216; <span class="required">*</span></label>';
+    html += '<input type="text" id="slBasicName" class="form-input" value="' + escHtml(tag.name || '') + '" maxlength="50">';
+    html += '</div><div class="form-group">';
+    html += '<label class="form-label" for="slBasicCode">&#26631;&#31614;&#20540; <span class="required">*</span></label>';
+    html += '<input type="text" id="slBasicCode" class="form-input" value="' + escHtml(tag.code || '') + '" maxlength="80">';
+    html += '</div><div class="form-group">';
     html += '<label class="form-label" for="slBasicDesc">&#26631;&#31614;&#35828;&#26126; <span class="required">*</span></label>';
-    html += '<textarea id="slBasicDesc" class="form-textarea sl-basic-desc-compact" rows="2">' + escHtml(tag.description || '') + '</textarea>';
-    html += '</div>';
+    html += '<input type="text" id="slBasicDesc" class="form-input" value="' + escHtml(tag.description || '') + '" maxlength="200" placeholder="请输入标签说明">';
+    html += '</div></div>';
     html += '</section>';
     html += renderSimpleRuleBlock(tag, 'text');
     html += renderSimpleRuleBlock(tag, 'image');
@@ -1584,10 +1636,12 @@
     // Validate basic info
     var codeEl = document.getElementById('slBasicCode');
     var descEl = document.getElementById('slBasicDesc');
-    if (!codeEl || !codeEl.value.trim()) { alert('???????'); return; }
+    var nameEl = document.getElementById('slBasicName');
+    if (!nameEl || !nameEl.value.trim()) { alert('请填写标签名称'); return; }
+    if (!codeEl || !codeEl.value.trim()) { alert('请填写标签值'); return; }
     var dup = sampleTags.filter(function(t){return t.id!==tag.id && t.code===codeEl.value.trim();});
-    if (dup.length > 0) { alert('???? "'+codeEl.value.trim()+'" ??????????'); return; }
-    if (!descEl || !descEl.value.trim()) { alert('???????????'); return; }
+    if (dup.length > 0) { alert('标签值 "'+codeEl.value.trim()+'" 已存在，请更换'); return; }
+    if (!descEl || !descEl.value.trim()) { alert('请填写标签说明'); return; }
 
     // Validate rules
     var hitConds = [];
@@ -1595,15 +1649,7 @@
       var v = row.querySelector('.sl-simple-cond-value');
       if (v && v.value.trim()) hitConds.push(true);
     });
-    if (hitConds.length === 0) { alert('???????????????'); return; }
-
-    // Validate cases
-    var posCases = getLabelCases(tag.id, 'positive').filter(function(c){return c.reviewStatus==='confirmed';});
-    if (posCases.length === 0) { alert('发布前至少需要一个已确认的正例案例'); return; }
-    var negCases = getLabelCases(tag.id, 'negative').filter(function(c){return c.reviewStatus==='confirmed';});
-    if (negCases.length === 0) {
-      if (!confirm('当前规则没有反例，可能增加误杀风险，是否继续发布？')) return;
-    }
+    if (hitConds.length === 0) { alert('请至少填写一条命中条件'); return; }
 
     // Collect and save
     collectBasicInfo(tag);
@@ -1612,20 +1658,21 @@
     saveSampleTags();
     saveLabelRules();
 
-    // Generate version
-    var existingVer = labelVersions.filter(function(v){return v.labelId===tag.id&&v.status==='active';});
-    existingVer.forEach(function(v){v.status='archived';});
-    var newVer = (labelVersions.filter(function(v){return v.labelId===tag.id;}).length + 1) + '.0';
-    labelVersions.push({
-      id: generateId('VER'), labelId: tag.id, version: newVer,
-      snapshot: { tag: JSON.parse(JSON.stringify(tag)), rules: JSON.parse(JSON.stringify(labelRules.filter(function(r){return r.labelId===tag.id;}))), cases: JSON.parse(JSON.stringify(getLabelCases(tag.id))) },
-      changeSummary: '发布 v' + newVer, changeType: 'initial', impactScope: ['标注','训练','测试集','RAG知识库'],
-      status: 'active', createdBy: null, createdAt: now()
-    });
-    saveLabelVersions();
+    // If we're in accordion view (L3 under L2), return to accordion
+    var savedTag = getSampleTagById(currentRuleTagId);
+    if (savedTag && savedTag.level === 3) {
+      var l2Parent = savedTag.parentId ? getSampleTagById(savedTag.parentId) : null;
+      if (l2Parent && l2Parent.level === 2) {
+        slExpandedL3CardId = currentRuleTagId;
+        renderL2ChildrenAccordion(l2Parent.id);
+        renderSampleTags();
+        showToast('规则已发布');
+        return;
+      }
+    }
     renderTagRulePanel(currentRuleTagId);
     renderSampleTags();
-    showToast('规则已发布，版本 v' + newVer);
+    showToast('规则已发布');
   }
 
   function disableRuleLabel() {
@@ -1702,8 +1749,10 @@
   function collectBasicInfo(tag) {
     var codeEl = document.getElementById('slBasicCode');
     var descEl = document.getElementById('slBasicDesc');
+    var nameEl = document.getElementById('slBasicName');
     if (codeEl) tag.code = codeEl.value.trim();
     if (descEl) tag.description = descEl.value.trim();
+    if (nameEl) tag.name = nameEl.value.trim();
     updateSampleTagPath(tag.id);
     tag.updatedAt = now();
   }
@@ -1975,10 +2024,14 @@
     html += '<div class="modal sl-tag-action-modal"><div class="modal-header">';
     html += '<h3>&#26032;&#24314;&#19968;&#32423;&#26631;&#31614;</h3>';
     html += '<button class="modal-close" id="btnSlRootTagClose">&times;</button></div>';
+    html += '<div class="form-row form-row-tag">';
     html += '<div class="form-group"><label class="form-label" for="slRootTagName">&#19968;&#32423;&#26631;&#31614;&#21517;&#31216; <span class="required">*</span></label>';
     html += '<input type="text" id="slRootTagName" class="form-input" maxlength="50" autocomplete="off"></div>';
     html += '<div class="form-group"><label class="form-label" for="slRootTagValue">&#26631;&#31614;&#20540; <span class="required">*</span></label>';
     html += '<input type="text" id="slRootTagValue" class="form-input" maxlength="80" autocomplete="off"></div>';
+    html += '<div class="form-group"><label class="form-label" for="slRootTagDesc">&#26631;&#31614;&#35828;&#26126; <span class="required">*</span></label>';
+    html += '<textarea id="slRootTagDesc" class="form-textarea" rows="3" placeholder="&#35831;&#36755;&#20837;&#26631;&#31614;&#35828;&#26126;"></textarea></div>';
+    html += '</div>';
     html += '<div class="form-actions">';
     html += '<button type="button" class="btn btn-primary" id="btnSlRootTagSave">&#20445;&#23384;</button>';
     html += '<button type="button" class="btn btn-secondary" id="btnSlRootTagCancel">&#21462;&#28040;</button>';
@@ -1994,8 +2047,10 @@
     document.getElementById('btnSlRootTagSave').addEventListener('click', function () {
       var name = document.getElementById('slRootTagName').value.trim();
       var value = document.getElementById('slRootTagValue').value.trim();
+      var desc = document.getElementById('slRootTagDesc').value.trim();
       if (!name) { alert('请填写一级标签名称'); return; }
       if (!value) { alert('请填写标签值'); return; }
+      if (!desc) { alert('请填写标签说明'); return; }
       var nameExists = sampleTags.some(function (tag) { return tag.level === 1 && (tag.name || '').trim() === name; });
       if (nameExists) { alert('一级标签名称已存在'); return; }
       var valueKey = value.toLowerCase();
@@ -2009,7 +2064,7 @@
         level: 1,
         parentId: null,
         path: name,
-        description: '',
+        description: desc,
         applicableContentTypes: ['text', 'image'],
         suggestedStatus: 'reject',
         riskLevel: 'medium',
@@ -2042,28 +2097,49 @@
     html += '<h3>标签操作 — ' + escHtml(tag.name) + '</h3>';
     html += '<button class="modal-close" id="btnSlTagActionClose">&times;</button></div>';
 
-    // Edit current tag name
+    // Edit current tag (3-column row)
+    html += '<div class="form-row form-row-tag">';
     html += '<div class="form-group">';
-    html += '<label class="form-label" for="slTagActionName">标签名称</label>';
+    html += '<label class="form-label" for="slTagActionName">标签名称 <span class="required">*</span></label>';
     html += '<input type="text" id="slTagActionName" class="form-input" maxlength="50" value="' + escHtml(tag.name || '') + '">';
+    html += '</div>';
+    html += '<div class="form-group">';
+    html += '<label class="form-label" for="slTagActionCode">标签值 <span class="required">*</span></label>';
+    html += '<input type="text" id="slTagActionCode" class="form-input" maxlength="80" value="' + escHtml(tag.code || '') + '">';
+    html += '</div>';
+    html += '<div class="form-group">';
+    html += '<label class="form-label" for="slTagActionDesc">标签说明 <span class="required">*</span></label>';
+    html += '<input type="text" id="slTagActionDesc" class="form-input" maxlength="200" value="' + escHtml(tag.description || '') + '" placeholder="请输入标签说明">';
+    html += '</div>';
     html += '</div>';
 
     // Add child tag section (only for level 1 and 2)
     if (isL1orL2) {
       html += '<div class="sl-action-divider"></div>';
       html += '<div class="sl-action-section-title">添加' + childLabel + '子标签</div>';
-      html += '<div class="form-row">';
+      html += '<div id="slActionChildRows">';
+      // Row template — first row
+      html += '<div class="sl-child-row">';
+      html += '<div class="form-row form-row-tag">';
       html += '<div class="form-group">';
-      html += '<label class="form-label" for="slActionChildName">子标签名称 <span class="required">*</span></label>';
-      html += '<input type="text" id="slActionChildName" class="form-input" maxlength="50" placeholder="请输入' + childLabel + '标签名称" autocomplete="off">';
+      html += '<label class="form-label">子标签名称 <span class="required">*</span></label>';
+      html += '<input type="text" class="form-input sl-child-name" maxlength="50" placeholder="请输入' + childLabel + '标签名称" autocomplete="off">';
       html += '</div>';
       html += '<div class="form-group">';
-      html += '<label class="form-label" for="slActionChildValue">标签值 <span class="required">*</span></label>';
-      html += '<input type="text" id="slActionChildValue" class="form-input" maxlength="80" placeholder="请输入标签值" autocomplete="off">';
+      html += '<label class="form-label">标签值 <span class="required">*</span></label>';
+      html += '<input type="text" class="form-input sl-child-value" maxlength="80" placeholder="请输入标签值" autocomplete="off">';
+      html += '</div>';
+      html += '<div class="form-group">';
+      html += '<label class="form-label">标签说明 <span class="required">*</span></label>';
+      html += '<input type="text" class="form-input sl-child-desc" maxlength="200" placeholder="请输入标签说明" autocomplete="off">';
       html += '</div>';
       html += '</div>';
-      html += '<div class="form-actions" style="margin-top:0;">';
-      html += '<button type="button" class="btn btn-primary btn-sm" id="btnSlActionAddChild">添加' + childLabel + '子标签</button>';
+      html += '<button type="button" class="sl-child-row-remove-btn" title="移除此行" style="display:none;">&times;</button>';
+      html += '</div>';
+      html += '</div>';
+      html += '<div class="form-actions" style="margin-top:8px;">';
+      html += '<button type="button" class="btn btn-sm btn-secondary" id="btnSlAddChildRow">+ 添加一行</button>';
+      html += '<button type="button" class="btn btn-primary btn-sm" id="btnSlActionAddChild">批量添加' + childLabel + '子标签</button>';
       html += '<span class="form-hint-inline" id="slActionChildMsg" style="color:var(--success);display:none;"></span>';
       html += '</div>';
     }
@@ -2087,8 +2163,14 @@
     // Save name
     document.getElementById('btnSlTagActionSave').addEventListener('click', function () {
       var name = document.getElementById('slTagActionName').value.trim();
+      var code = document.getElementById('slTagActionCode').value.trim();
+      var desc = document.getElementById('slTagActionDesc').value.trim();
       if (!name) { alert('请输入标签名称'); return; }
+      if (!code) { alert('请输入标签值'); return; }
+      if (!desc) { alert('请输入标签说明'); return; }
       tag.name = name;
+      tag.code = code;
+      tag.description = desc;
       tag.updatedAt = now();
       updateSampleTagPath(tag.id);
       saveSampleTags();
@@ -2103,46 +2185,147 @@
       handleSlTagDelete(tag.id);
     });
 
-    // Add child tag
+    // Add child tag — batch
     if (isL1orL2) {
+      // Helper: collect rows from DOM
+      function getChildRows() {
+        var container = document.getElementById('slActionChildRows');
+        return container ? container.querySelectorAll('.sl-child-row') : [];
+      }
+
+      // Build a single row element
+      function createChildRow() {
+        var row = document.createElement('div');
+        row.className = 'sl-child-row';
+        row.innerHTML = '<div class="form-row form-row-tag">'
+          + '<div class="form-group">'
+          + '<label class="form-label">子标签名称 <span class="required">*</span></label>'
+          + '<input type="text" class="form-input sl-child-name" maxlength="50" placeholder="请输入' + childLabel + '标签名称" autocomplete="off">'
+          + '</div>'
+          + '<div class="form-group">'
+          + '<label class="form-label">标签值 <span class="required">*</span></label>'
+          + '<input type="text" class="form-input sl-child-value" maxlength="80" placeholder="请输入标签值" autocomplete="off">'
+          + '</div>'
+          + '<div class="form-group">'
+          + '<label class="form-label">标签说明 <span class="required">*</span></label>'
+          + '<input type="text" class="form-input sl-child-desc" maxlength="200" placeholder="请输入标签说明" autocomplete="off">'
+          + '</div>'
+          + '</div>'
+          + '<button type="button" class="sl-child-row-remove-btn" title="移除此行">&times;</button>';
+        var btn = row.querySelector('.sl-child-row-remove-btn');
+        btn.addEventListener('click', function () {
+          var rows = getChildRows();
+          if (rows.length <= 1) return;
+          row.remove();
+          updateRemoveButtons();
+        });
+        return row;
+      }
+
+      function updateRemoveButtons() {
+        var rows = getChildRows();
+        rows.forEach(function (r) {
+          var btn = r.querySelector('.sl-child-row-remove-btn');
+          if (btn) btn.style.display = rows.length <= 1 ? 'none' : '';
+        });
+      }
+
+      // Add row button
+      document.getElementById('btnSlAddChildRow').addEventListener('click', function () {
+        var container = document.getElementById('slActionChildRows');
+        container.appendChild(createChildRow());
+        updateRemoveButtons();
+      });
+
+      // Wire remove button on initial row (now visible when more than 1 row)
+      var initialRemoveBtn = document.querySelector('#slActionChildRows .sl-child-row-remove-btn');
+      if (initialRemoveBtn) {
+        initialRemoveBtn.addEventListener('click', function () {
+          var rows = getChildRows();
+          if (rows.length <= 1) return;
+          initialRemoveBtn.closest('.sl-child-row').remove();
+          updateRemoveButtons();
+        });
+      }
+
+      // Batch add handler
       document.getElementById('btnSlActionAddChild').addEventListener('click', function () {
-        var childName = document.getElementById('slActionChildName').value.trim();
-        var childValue = document.getElementById('slActionChildValue').value.trim();
         var msgEl = document.getElementById('slActionChildMsg');
-
-        if (!childName) { msgEl.style.display = 'inline'; msgEl.style.color = 'var(--danger)'; msgEl.textContent = '请填写子标签名称'; return; }
-        if (!childValue) { msgEl.style.display = 'inline'; msgEl.style.color = 'var(--danger)'; msgEl.textContent = '请填写标签值'; return; }
-
-        // Validate tag name uniqueness among siblings (same parent)
+        var rows = getChildRows();
+        var toCreate = [];
+        var errors = [];
         var siblings = sampleTags.filter(function (t) { return (t.parentId || null) === tagId; });
-        var nameExists = siblings.some(function (t) { return (t.name || '').trim() === childName; });
-        if (nameExists) { msgEl.style.display = 'inline'; msgEl.style.color = 'var(--danger)'; msgEl.textContent = '子标签名称已存在，请更换'; return; }
+        var existingCodes = {};
+        sampleTags.forEach(function (t) { existingCodes[String(t.code || '').trim().toLowerCase()] = true; });
+        var existingNames = {};
+        siblings.forEach(function (t) { existingNames[(t.name || '').trim()] = true; });
 
-        // Validate tag value uniqueness globally
-        var valueKey = childValue.toLowerCase();
-        var valueExists = sampleTags.some(function (t) { return String(t.code || '').trim().toLowerCase() === valueKey; });
-        if (valueExists) { msgEl.style.display = 'inline'; msgEl.style.color = 'var(--danger)'; msgEl.textContent = '标签值已存在，请更换'; return; }
+        // Also track names/values within this batch to avoid internal duplicates
+        var batchNames = {};
+        var batchCodes = {};
 
-        // Create child tag
+        for (var i = 0; i < rows.length; i++) {
+          var row = rows[i];
+          var name = (row.querySelector('.sl-child-name') || {}).value;
+          var value = (row.querySelector('.sl-child-value') || {}).value;
+          var desc = (row.querySelector('.sl-child-desc') || {}).value;
+          name = name ? name.trim() : '';
+          value = value ? value.trim() : '';
+          desc = desc ? desc.trim() : '';
+
+          // Skip completely empty rows
+          if (!name && !value && !desc) continue;
+
+          if (!name) { errors.push('第' + (i + 1) + '行：请填写子标签名称'); continue; }
+          if (!value) { errors.push('第' + (i + 1) + '行：请填写标签值'); continue; }
+          if (!desc) { errors.push('第' + (i + 1) + '行：请填写标签说明'); continue; }
+
+          if (existingNames[name] || batchNames[name]) { errors.push('第' + (i + 1) + '行：子标签名称「' + name + '」已存在'); continue; }
+          var valueKey = value.toLowerCase();
+          if (existingCodes[valueKey] || batchCodes[valueKey]) { errors.push('第' + (i + 1) + '行：标签值「' + value + '」已存在'); continue; }
+
+          batchNames[name] = true;
+          batchCodes[valueKey] = true;
+          toCreate.push({ name: name, value: value, desc: desc });
+        }
+
+        if (errors.length > 0) {
+          msgEl.style.display = 'inline';
+          msgEl.style.color = 'var(--danger)';
+          msgEl.textContent = errors.join('；');
+          return;
+        }
+
+        if (toCreate.length === 0) {
+          msgEl.style.display = 'inline';
+          msgEl.style.color = 'var(--danger)';
+          msgEl.textContent = '请至少填写一行子标签';
+          return;
+        }
+
+        // Create all child tags
         var childSiblings = sampleTags.filter(function (t) { return t.parentId === tagId; });
-        var newChild = {
-          id: generateId('STAG'),
-          name: childName,
-          code: childValue,
-          level: childLevel,
-          parentId: tagId,
-          path: (tag.path || tag.name) + '/' + childName,
-          description: '',
-          applicableContentTypes: tag.applicableContentTypes || ['text', 'image'],
-          suggestedStatus: 'reject',
-          riskLevel: 'medium',
-          status: 'active',
-          ownerId: null,
-          sortOrder: childSiblings.length,
-          createdAt: now(),
-          updatedAt: now()
-        };
-        sampleTags.push(newChild);
+        var sortBase = childSiblings.length;
+        toCreate.forEach(function (item, idx) {
+          var newChild = {
+            id: generateId('STAG'),
+            name: item.name,
+            code: item.value,
+            level: childLevel,
+            parentId: tagId,
+            path: (tag.path || tag.name) + '/' + item.name,
+            description: item.desc,
+            applicableContentTypes: tag.applicableContentTypes || ['text', 'image'],
+            suggestedStatus: 'reject',
+            riskLevel: 'medium',
+            status: 'active',
+            ownerId: null,
+            sortOrder: sortBase + idx,
+            createdAt: now(),
+            updatedAt: now()
+          };
+          sampleTags.push(newChild);
+        });
         saveSampleTags();
 
         // Expand parent and refresh tree
@@ -2150,12 +2333,26 @@
         renderSampleTags();
         showTagDetail(tag.id);
 
-        // Show success and clear inputs
+        // Show success and clear all inputs
         msgEl.style.display = 'inline';
         msgEl.style.color = 'var(--success)';
-        msgEl.textContent = '子标签「' + childName + '」已添加';
-        document.getElementById('slActionChildName').value = '';
-        document.getElementById('slActionChildValue').value = '';
+        msgEl.textContent = '已成功添加 ' + toCreate.length + ' 个' + childLabel + '子标签';
+
+        // Clear all rows back to just one empty row
+        var container = document.getElementById('slActionChildRows');
+        container.innerHTML = '';
+        var newRow = createChildRow();
+        var newRemoveBtn = newRow.querySelector('.sl-child-row-remove-btn');
+        if (newRemoveBtn) {
+          newRemoveBtn.style.display = 'none';
+          newRemoveBtn.addEventListener('click', function () {
+            var rows = getChildRows();
+            if (rows.length <= 1) return;
+            newRow.remove();
+            updateRemoveButtons();
+          });
+        }
+        container.appendChild(newRow);
       });
     }
   }
@@ -5349,6 +5546,14 @@
         var tagId = toggle.dataset.tagId;
         slExpandedTagIds[tagId] = !slExpandedTagIds[tagId];
         renderSampleTags();
+        var toggledTag = getSampleTagById(tagId);
+        if (toggledTag && toggledTag.level === 1) {
+          if (slExpandedTagIds[tagId]) {
+            renderTagSummaryPanel(tagId);
+          } else {
+            document.getElementById('slTagEditPanel').innerHTML = '';
+          }
+        }
         return;
       }
       var menuBtn = e.target.closest('[data-sl-tag-menu]');
@@ -5365,6 +5570,21 @@
 
     // Tag panel — click delegation for tab workspace
     document.getElementById('slTagEditPanel').addEventListener('click', function (e) {
+      // Level-3 accordion card toggle
+      var l3Toggle = e.target.closest('[data-l3-toggle]');
+      if (l3Toggle) {
+        e.stopPropagation();
+        var cardId = l3Toggle.dataset.l3Toggle;
+        slExpandedL3CardId = (slExpandedL3CardId === cardId) ? null : cardId;
+        // Find the level-2 parent (walk up from the L3 tag)
+        var l3Tag = getSampleTagById(cardId);
+        var l2Parent = l3Tag && l3Tag.parentId ? getSampleTagById(l3Tag.parentId) : null;
+        if (l2Parent && l2Parent.level === 2) {
+          renderL2ChildrenAccordion(l2Parent.id);
+        }
+        return;
+      }
+
       var btn = e.target.closest('button, a[data-action]');
       if (!btn) return;
 
