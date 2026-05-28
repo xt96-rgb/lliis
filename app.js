@@ -1804,10 +1804,8 @@
     var html = '<div class="modal-overlay" id="caseModalOverlay" style="display:flex;"><div class="modal" style="max-width:620px;max-height:85vh;overflow-y:auto;"><div class="modal-header">';
     html += '<h3>' + (existing ? '&#32534;&#36753;&#26696;&#20363;' : '&#26032;&#22686;&#26696;&#20363;') + '</h3>';
     html += '<button class="modal-close" id="btnCaseModalClose">&times;</button></div>';
-    html += '<div class="form-row"><div class="form-group"><label class="form-label">&#26696;&#20363;&#31867;&#22411;</label>';
-    html += '<select id="caseType" class="form-select"><option value="positive"' + (selectedCaseType === 'positive' ? ' selected' : '') + '>&#27491;&#26696;&#20363;</option><option value="negative"' + (selectedCaseType === 'negative' ? ' selected' : '') + '>&#21453;&#26696;&#20363;</option></select></div>';
     html += '<div class="form-group"><label class="form-label">&#20869;&#23481;&#31867;&#22411;</label>';
-    html += '<select id="caseContentType" class="form-select"><option value="text"' + (selectedType === 'text' ? ' selected' : '') + '>&#25991;&#26412;</option><option value="image"' + (selectedType === 'image' ? ' selected' : '') + '>&#22270;&#29255;</option></select></div></div>';
+    html += '<select id="caseContentType" class="form-select"><option value="text"' + (selectedType === 'text' ? ' selected' : '') + '>&#25991;&#26412;</option><option value="image"' + (selectedType === 'image' ? ' selected' : '') + '>&#22270;&#29255;</option></select></div>';
     html += '<div id="caseTextFields" style="display:' + (selectedType === 'text' ? '' : 'none') + ';"><div class="form-group"><label class="form-label">&#25991;&#26412;&#20869;&#23481;</label>';
     html += '<textarea id="caseTextContent" class="form-textarea" rows="5">' + escHtml(existing ? existing.textContent || '' : '') + '</textarea></div></div>';
     html += '<div id="caseImageFields" style="display:' + (selectedType === 'image' ? '' : 'none') + ';">';
@@ -1818,6 +1816,7 @@
     html += '<div class="form-group"><label class="form-label">&#21028;&#26029;&#29702;&#30001;</label><textarea id="caseJudgmentReason" class="form-textarea" rows="3">' + escHtml(existing ? existing.judgmentReason || '' : '') + '</textarea></div>';
     html += '<input type="hidden" id="caseId" value="' + (existing ? existing.id : '') + '">';
     html += '<input type="hidden" id="caseTagId" value="' + tag.id + '">';
+    html += '<input type="hidden" id="caseType" value="' + selectedCaseType + '">';
     html += '<div class="form-actions"><button class="btn btn-primary" id="btnCaseSave">&#20445;&#23384;</button><button class="btn btn-secondary" id="btnCaseCancel">&#21462;&#28040;</button></div>';
     html += '</div></div>';
 
